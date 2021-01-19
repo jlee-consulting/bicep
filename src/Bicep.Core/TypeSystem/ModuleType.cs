@@ -3,7 +3,7 @@
 
 namespace Bicep.Core.TypeSystem
 {
-    public class ModuleType : TypeSymbol, IResourceScopeType
+    public class ModuleType : TypeSymbol, IScopeReference
     {
         public ModuleType(string name, ITypeReference body)
             : base(name)

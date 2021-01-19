@@ -3,12 +3,12 @@
 
 namespace Bicep.Core.TypeSystem
 {
-    public class ResourceReferenceType : TypeSymbol
+    public class ResourceScopeType : TypeSymbol, IScopeReference
     {
-        public ResourceReferenceType(string name, ResourceScope resourceScopeType)
+        public ResourceScopeType(string name, ResourceScope scopeType)
             : base(name)
         {
-            ResourceScopeType = resourceScopeType;
+            ResourceScopeType = scopeType;
         }
 
         public override TypeKind TypeKind => TypeKind.ResourceScopeReference;

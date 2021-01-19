@@ -125,6 +125,19 @@ namespace Bicep.Core.Semantics.Namespaces
             return new NamedObjectType("deployment", TypeSymbolValidationFlags.Default, properties, null);
         }
 
+        public static ResourceScope GetValidScopesForScopeFunctions(ResourceScope targetScope, int argCount)
+            => (targetScope, argCount) switch {
+                (ResourceScope.Tenant, 0) => ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup,
+                (ResourceScope.ManagementGroup, 1) => ResourceScope.Tenant | ResourceScope.ManagementGroup,
+                (ResourceScope.ManagementGroup, 0) => ResourceScope.ManagementGroup,
+                (ResourceScope.Subscription, 1) => ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription,
+                (ResourceScope.Subscription, 0) => ResourceScope.Subscription | ResourceScope.ResourceGroup,
+                (ResourceScope.ResourceGroup, 2) => ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.ResourceGroup,
+                (ResourceScope.ResourceGroup, 1) => ResourceScope.Subscription | ResourceScope.ResourceGroup,
+                (ResourceScope.ResourceGroup, 0) => ResourceScope.Subscription | ResourceScope.ResourceGroup,
+                _ => ResourceScope.None,
+            };
+
         private static IEnumerable<(FunctionOverload functionOverload, ResourceScope allowedScopes)> GetScopeFunctions()
         {
             // Depending on the scope of the Bicep file, different sets of function overloads are invalid - for example, you can't use 'resourceGroup()' inside a tenant-level deployment
@@ -133,56 +146,54 @@ namespace Bicep.Core.Semantics.Namespaces
             // return an empty object type (so that dot property access doesn't work), and generate as an ARM expression "createObject()" if anyone tries to access the object value.
             // This list should be kept in-sync with ScopeHelper.CanConvertToArmJson().
 
-            var allScopes = ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup;
-
             yield return (
                 new FunctionOverloadBuilder("tenant")
                     .WithDynamicReturnType(GetRestrictedTenantReturnValue)
                     .WithDescription("Returns the current tenant scope.")
                     .Build(),
-                allScopes);
+                GetValidScopesForScopeFunctions(ResourceScope.Tenant, 0));
 
             yield return (
                 new FunctionOverloadBuilder("managementGroup")
                     .WithDynamicReturnType(GetRestrictedManagementGroupReturnValue)
                     .WithDescription("Returns the current management group scope. **This function can only be used in managementGroup deployments.**")
                     .Build(),
-                ResourceScope.ManagementGroup);
+                GetValidScopesForScopeFunctions(ResourceScope.ManagementGroup, 0));
             yield return (
                 new FunctionOverloadBuilder("managementGroup")
                     .WithDynamicReturnType(GetRestrictedManagementGroupReturnValue)
                     .WithDescription("Returns the scope for a named management group.")
                     .WithRequiredParameter("name", LanguageConstants.String, "The unique identifier of the management group (not the display name).")
                     .Build(),
-                ResourceScope.Tenant | ResourceScope.ManagementGroup);
+                GetValidScopesForScopeFunctions(ResourceScope.ManagementGroup, 1));
 
             yield return (
                 new FunctionOverloadBuilder("subscription")
                     .WithDynamicReturnType(GetSubscriptionReturnValue)
                     .WithDescription("Returns the subscription scope for the current deployment. **This function can only be used in subscription and resourceGroup deployments.**")
                     .Build(),
-                ResourceScope.Subscription | ResourceScope.ResourceGroup);
+                GetValidScopesForScopeFunctions(ResourceScope.Subscription, 0));
             yield return (
                 new FunctionOverloadBuilder("subscription")
                     .WithDynamicReturnType(GetRestrictedSubscriptionReturnValue)
                     .WithDescription("Returns a named subscription scope. **This function can only be used in subscription and resourceGroup deployments.**")
                     .WithRequiredParameter("subscriptionId", LanguageConstants.String, "The subscription ID")
                     .Build(),
-                allScopes);
+                GetValidScopesForScopeFunctions(ResourceScope.Subscription, 1));
 
             yield return (
                 new FunctionOverloadBuilder("resourceGroup")
                     .WithDynamicReturnType(GetResourceGroupReturnValue)
                     .WithDescription("Returns the current resource group scope. **This function can only be used in resourceGroup deployments.**")
                     .Build(),
-                ResourceScope.ResourceGroup);
+                GetValidScopesForScopeFunctions(ResourceScope.ResourceGroup, 0));
             yield return (
                 new FunctionOverloadBuilder("resourceGroup")
                     .WithDynamicReturnType(GetRestrictedResourceGroupReturnValue)
                     .WithDescription("Returns a named resource group scope. **This function can only be used in subscription and resourceGroup deployments.**")
                     .WithRequiredParameter("resourceGroupName", LanguageConstants.String, "The resource group name")
                     .Build(),
-                ResourceScope.Subscription | ResourceScope.ResourceGroup);
+                GetValidScopesForScopeFunctions(ResourceScope.ResourceGroup, 1));
             yield return (
                 new FunctionOverloadBuilder("resourceGroup")
                     .WithDynamicReturnType(GetRestrictedResourceGroupReturnValue)
@@ -190,7 +201,7 @@ namespace Bicep.Core.Semantics.Namespaces
                     .WithRequiredParameter("subscriptionId", LanguageConstants.String, "The subscription ID")
                     .WithRequiredParameter("resourceGroupName", LanguageConstants.String, "The resource group name")
                     .Build(),
-                ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup);
+                GetValidScopesForScopeFunctions(ResourceScope.ResourceGroup, 2));
         }
 
         private static IEnumerable<FunctionOverload> GetAzOverloads(ResourceScope resourceScope)

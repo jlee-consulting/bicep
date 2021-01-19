@@ -4,7 +4,7 @@ using Bicep.Core.Resources;
 
 namespace Bicep.Core.TypeSystem
 {
-    public class ResourceType : TypeSymbol, IResourceScopeType
+    public class ResourceType : TypeSymbol, IScopeReference
     {
         public ResourceType(ResourceTypeReference typeReference, ITypeReference body)
             : base(typeReference.FormatName())

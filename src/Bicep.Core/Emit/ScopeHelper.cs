@@ -6,6 +6,7 @@ using System.Linq;
 using Azure.Deployments.Expression.Expressions;
 using Bicep.Core.Extensions;
 using Bicep.Core.Semantics;
+using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
 using Bicep.Core.TypeSystem.Az;
@@ -23,99 +24,44 @@ namespace Bicep.Core.Emit
             public SyntaxBase? SubscriptionIdProperty { get; set; }
 
             public SyntaxBase? ResourceGroupProperty { get; set; }
+
+            public ResourceSymbol? ResourceScopeSymbol { get; set; }
         }
+
+        private static (ResourceScope, IReadOnlyList<FunctionArgumentSyntax>)? GetScopeInformation(TypeSymbol scopeType)
+            => scopeType switch {
+                TenantScopeType type => (ResourceScope.Tenant, type.Arguments),
+                ManagementGroupScopeType type => (ResourceScope.ManagementGroup, type.Arguments),
+                SubscriptionScopeType type => (ResourceScope.Subscription, type.Arguments),
+                ResourceGroupScopeType type => (ResourceScope.ResourceGroup, type.Arguments),
+                _ => null,
+            };
 
         public static ScopeData? TryGetScopeData(ResourceScope currentScope, TypeSymbol scopeType)
         {
-            switch (currentScope)
+            if (GetScopeInformation(scopeType) is not {} scopeInfo)
             {
-                case ResourceScope.Tenant:
-                    switch (scopeType)
-                    {
-                        case TenantScopeType:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Tenant };
-                        case ManagementGroupScopeType managementGroupScopeType when managementGroupScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.ManagementGroup,
-                                ManagementGroupNameProperty = managementGroupScopeType.Arguments[0].Expression };
-                        case SubscriptionScopeType subscriptionScopeType when subscriptionScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Subscription, 
-                                SubscriptionIdProperty = subscriptionScopeType.Arguments[0].Expression };
-                        case ResourceGroupScopeType resourceGroupScopeType when resourceGroupScopeType.Arguments.Length == 2:
-                            return new ScopeData {
-                                RequestedScope = ResourceScope.ResourceGroup,
-                                SubscriptionIdProperty = resourceGroupScopeType.Arguments[0].Expression,
-                                ResourceGroupProperty = resourceGroupScopeType.Arguments[1].Expression };
-                    }
-                    break;
-                case ResourceScope.ManagementGroup:
-                    switch (scopeType)
-                    {
-                        case TenantScopeType:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Tenant };
-                        case ManagementGroupScopeType managementGroupScopeType when managementGroupScopeType.Arguments.Length == 0:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.ManagementGroup };
-                        case ManagementGroupScopeType managementGroupScopeType when managementGroupScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.ManagementGroup, 
-                                ManagementGroupNameProperty = managementGroupScopeType.Arguments[0].Expression };
-                        case SubscriptionScopeType subscriptionScopeType when subscriptionScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Subscription, 
-                                SubscriptionIdProperty = subscriptionScopeType.Arguments[0].Expression };
-                        case ResourceGroupScopeType resourceGroupScopeType when resourceGroupScopeType.Arguments.Length == 2:
-                            return new ScopeData {
-                                RequestedScope = ResourceScope.ResourceGroup,
-                                SubscriptionIdProperty = resourceGroupScopeType.Arguments[0].Expression,
-                                ResourceGroupProperty = resourceGroupScopeType.Arguments[1].Expression };
-                    }
-                    break;
-                case ResourceScope.Subscription:
-                    switch (scopeType)
-                    {
-                        case TenantScopeType:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Tenant };
-                        case SubscriptionScopeType subscriptionScopeType when subscriptionScopeType.Arguments.Length == 0:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Subscription };
-                        case SubscriptionScopeType subscriptionScopeType when subscriptionScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Subscription, 
-                                SubscriptionIdProperty = subscriptionScopeType.Arguments[0].Expression };
-                        case ResourceGroupScopeType resourceGroupScopeType when resourceGroupScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.ResourceGroup, 
-                                ResourceGroupProperty = resourceGroupScopeType.Arguments[0].Expression };
-                    }
-                    break;
-                case ResourceScope.ResourceGroup:
-                    switch (scopeType)
-                    {
-                        case TenantScopeType:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.Tenant };
-                        case ResourceGroupScopeType resourceGroupScopeType when resourceGroupScopeType.Arguments.Length == 0:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.ResourceGroup };
-                        case ResourceGroupScopeType resourceGroupScopeType when resourceGroupScopeType.Arguments.Length == 1:
-                            return new ScopeData { 
-                                RequestedScope = ResourceScope.ResourceGroup,
-                                ResourceGroupProperty = resourceGroupScopeType.Arguments[0].Expression };
-                        case ResourceGroupScopeType resourceGroupScopeType when resourceGroupScopeType.Arguments.Length == 2:
-                            return new ScopeData {
-                                RequestedScope = ResourceScope.ResourceGroup,
-                                SubscriptionIdProperty = resourceGroupScopeType.Arguments[0].Expression,
-                                ResourceGroupProperty = resourceGroupScopeType.Arguments[1].Expression };
-                    }
-                    break;
+                return null;
             }
 
-            return null;
+            var (scope, arguments) = scopeInfo;
+            var validScopes = AzNamespaceSymbol.GetValidScopesForScopeFunctions(scope, arguments.Count);
+            if ((validScopes & currentScope) == ResourceScope.None)
+            {
+                return null;
+            }
+
+            return (scope, arguments.Count) switch {
+                (ResourceScope.Tenant, 0) => new ScopeData { RequestedScope = scope },
+                (ResourceScope.ManagementGroup, 0) => new ScopeData { RequestedScope = scope },
+                (ResourceScope.ManagementGroup, 1) => new ScopeData { RequestedScope = scope, ManagementGroupNameProperty = arguments[0].Expression },
+                (ResourceScope.Subscription, 0) => new ScopeData { RequestedScope = scope },
+                (ResourceScope.Subscription, 1) => new ScopeData { RequestedScope = scope, SubscriptionIdProperty= arguments[0].Expression },
+                (ResourceScope.ResourceGroup, 0) => new ScopeData { RequestedScope = scope },
+                (ResourceScope.ResourceGroup, 1) => new ScopeData { RequestedScope = scope, ResourceGroupProperty = arguments[0].Expression },
+                (ResourceScope.ResourceGroup, 2) => new ScopeData { RequestedScope = scope, SubscriptionIdProperty = arguments[0].Expression, ResourceGroupProperty = arguments[1].Expression },
+                _ => null,
+            };
         }
 
         public static LanguageExpression FormatCrossScopeResourceId(ExpressionConverter expressionConverter, ScopeData scopeData, string fullyQualifiedType, IEnumerable<LanguageExpression> nameSegments)
