@@ -58,10 +58,10 @@ namespace Bicep.Core.Diagnostics
                 "BCP005",
                 "The string at this location is not terminated. Complete the escape sequence and terminate the string with a single unescaped quote character.");
 
-            public ErrorDiagnostic UnterminatedStringEscapeSequenceUnrecognized(IEnumerable<string> escapeChars) => new ErrorDiagnostic(
+            public ErrorDiagnostic UnterminatedStringEscapeSequenceUnrecognized(IEnumerable<string> escapeSequences) => new ErrorDiagnostic(
                 TextSpan,
                 "BCP006",
-                $"The specified escape sequence is not recognized. Only the following characters can be escaped with a backslash: {ToQuotedString(escapeChars)}.");
+                $"The specified escape sequence is not recognized. Only the following escape sequences are allowed: {ToQuotedString(escapeSequences)}.");
 
             public ErrorDiagnostic UnrecognizedDeclaration() => new ErrorDiagnostic(
                 TextSpan,
@@ -711,6 +711,11 @@ namespace Bicep.Core.Diagnostics
                 TextSpan,                
                 "BCP122",
                 $"Modules: {ToQuotedString(moduleNames)} are defined with this same name and this same scope in a file. Rename them or split into different modules.");
+
+            public ErrorDiagnostic InvalidUnicodeEscape() => new(
+                TextSpan,
+                "BCP123",
+                "The unicode escape sequence is not valid. Valid unicode escape sequences range from \\u{0} to \\u{10FFFF}.");
         }
 
         public static DiagnosticBuilderInternal ForPosition(TextSpan span)
