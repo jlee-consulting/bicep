@@ -22,22 +22,23 @@ namespace Bicep.Core.Semantics
             // TODO use lazy or some other pattern for init
             this.syntaxTree = syntaxTree;
             this.TargetScope = SyntaxHelper.GetTargetScope(syntaxTree);
-            var allDeclarations = GetAllDeclarations(syntaxTree, symbolContext);
-            var uniqueDeclarations = GetUniqueDeclarations(allDeclarations);
-            var builtInNamespacs = GetBuiltInNamespaces(this.TargetScope);
-            this.bindings = GetBindings(syntaxTree, uniqueDeclarations, builtInNamespacs);
-            this.cyclesBySymbol = GetCyclesBySymbol(syntaxTree, uniqueDeclarations, this.bindings);
+            var (declarations, outermostScopes) = DeclarationVisitor.GetDeclarations(syntaxTree, symbolContext);
+            var uniqueDeclarations = GetUniqueDeclarations(declarations);
+            var builtInNamespaces = GetBuiltInNamespaces(this.TargetScope);
+            this.bindings = GetBindings(syntaxTree, uniqueDeclarations, builtInNamespaces, outermostScopes);
+            this.cyclesBySymbol = GetCyclesBySymbol(syntaxTree, this.bindings);
 
             // TODO: Avoid looping 5 times?
             this.FileSymbol = new FileSymbol(
                 syntaxTree.FileUri.LocalPath,
                 syntaxTree.ProgramSyntax,
-                builtInNamespacs,
-                allDeclarations.OfType<ParameterSymbol>(),
-                allDeclarations.OfType<VariableSymbol>(),
-                allDeclarations.OfType<ResourceSymbol>(),
-                allDeclarations.OfType<ModuleSymbol>(),
-                allDeclarations.OfType<OutputSymbol>());
+                builtInNamespaces,
+                outermostScopes,
+                declarations.OfType<ParameterSymbol>(),
+                declarations.OfType<VariableSymbol>(),
+                declarations.OfType<ResourceSymbol>(),
+                declarations.OfType<ModuleSymbol>(),
+                declarations.OfType<OutputSymbol>());
         }
 
         public ResourceScope TargetScope { get; }
@@ -45,7 +46,7 @@ namespace Bicep.Core.Semantics
         public FileSymbol FileSymbol { get; }
 
         public SyntaxBase? GetParent(SyntaxBase syntax)
-            => syntaxTree.Hierarchy.GetParent(syntax);        
+            => syntaxTree.Hierarchy.GetParent(syntax);
 
         /// <summary>
         /// Returns the symbol that was bound to the specified syntax node. Will return null for syntax nodes that never get bound to symbols. Otherwise,
@@ -66,22 +67,12 @@ namespace Bicep.Core.Semantics
         public ImmutableArray<DeclaredSymbol>? TryGetCycle(DeclaredSymbol declaredSymbol)
             => this.cyclesBySymbol.TryGetValue(declaredSymbol, out var cycle) ? cycle : null;
 
-        private static ImmutableArray<DeclaredSymbol> GetAllDeclarations(SyntaxTree syntaxTree, ISymbolContext symbolContext)
-        {
-            // collect declarations
-            var declarations = new List<DeclaredSymbol>();
-            var declarationVisitor = new DeclarationVisitor(symbolContext, declarations);
-            declarationVisitor.Visit(syntaxTree.ProgramSyntax);
-
-            return declarations.ToImmutableArray();
-        }
-
-        private static ImmutableDictionary<string, DeclaredSymbol> GetUniqueDeclarations(IEnumerable<DeclaredSymbol> allDeclarations)
+        private static ImmutableDictionary<string, DeclaredSymbol> GetUniqueDeclarations(IEnumerable<DeclaredSymbol> outermostDeclarations)
         {
             // in cases of duplicate declarations we will see multiple declaration symbols in the result list
             // for simplicitly we will bind to the first one
             // it may cause follow-on type errors, but there will also be errors about duplicate identifiers as well
-            return allDeclarations
+            return outermostDeclarations
                 .ToLookup(x => x.Name, LanguageConstants.IdentifierComparer)
                 .ToImmutableDictionary(x => x.Key, x => x.First(), LanguageConstants.IdentifierComparer);
         }
@@ -93,19 +84,23 @@ namespace Bicep.Core.Semantics
             return namespaces.ToImmutableDictionary(property => property.Name, property => property, LanguageConstants.IdentifierComparer);
         }
 
-        private static ImmutableDictionary<SyntaxBase, Symbol> GetBindings(SyntaxTree syntaxTree, IReadOnlyDictionary<string, DeclaredSymbol> uniqueDeclarations, ImmutableDictionary<string, NamespaceSymbol> builtInNamespaces)
+        private static ImmutableDictionary<SyntaxBase, Symbol> GetBindings(
+            SyntaxTree syntaxTree,
+            IReadOnlyDictionary<string, DeclaredSymbol> outermostDeclarations,
+            ImmutableDictionary<string, NamespaceSymbol> builtInNamespaces,
+            ImmutableArray<LocalScope> childScopes)
         {
             // bind identifiers to declarations
             var bindings = new Dictionary<SyntaxBase, Symbol>();
-            var binder = new NameBindingVisitor(uniqueDeclarations, bindings, builtInNamespaces);
+            var binder = new NameBindingVisitor(outermostDeclarations, bindings, builtInNamespaces, childScopes);
             binder.Visit(syntaxTree.ProgramSyntax);
 
             return bindings.ToImmutableDictionary();
         }
 
-        private static ImmutableDictionary<DeclaredSymbol, ImmutableArray<DeclaredSymbol>> GetCyclesBySymbol(SyntaxTree syntaxTree, IReadOnlyDictionary<string, DeclaredSymbol> uniqueDeclarations, IReadOnlyDictionary<SyntaxBase, Symbol> bindings)
+        private static ImmutableDictionary<DeclaredSymbol, ImmutableArray<DeclaredSymbol>> GetCyclesBySymbol(SyntaxTree syntaxTree, IReadOnlyDictionary<SyntaxBase, Symbol> bindings)
         {
-            return CyclicCheckVisitor.FindCycles(syntaxTree.ProgramSyntax, uniqueDeclarations, bindings);
+            return CyclicCheckVisitor.FindCycles(syntaxTree.ProgramSyntax, bindings);
         }
     }
 }

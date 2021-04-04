@@ -30,7 +30,7 @@ namespace Bicep.Decompiler
 
         private static string EscapeIdentifier(string identifier)
         {
-            return Regex.Replace(identifier, "[^a-zA-Z0-9]+", "_").Trim('_');
+            return Regex.Replace(identifier, "[^a-zA-Z0-9\\p{Lu}\\p{Ll}\\p{Lt}\\p{Lm}\\p{Lo}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Cf}]+", "_").Trim('_');
         }
 
         public string? TryLookupName(NameType nameType, string desiredName)
@@ -68,9 +68,22 @@ namespace Bicep.Decompiler
                 {
                     return null;
                 }
-                
-                // TODO technically a naming clash is still possible here but unlikely
-                nameByType[nameType] = $"{desiredName}_{GetNamingSuffix(nameType)}";
+
+                if (nameType == NameType.Output)
+                {
+                    // output names can't clash with param/var/resource names
+                    nameByType[nameType] = desiredName;
+                }
+                else if (!nameByType.ContainsKey(NameType.Parameter) && !nameByType.ContainsKey(NameType.Variable) && !nameByType.ContainsKey(NameType.Resource))
+                {
+                    // param/var/resource names can't clash with output names
+                    nameByType[nameType] = desiredName;
+                }
+                else
+                {
+                    // TODO technically a naming clash is still possible here but unlikely
+                    nameByType[nameType] = $"{desiredName}_{GetNamingSuffix(nameType)}";
+                }
             }
 
             return nameByType[nameType];

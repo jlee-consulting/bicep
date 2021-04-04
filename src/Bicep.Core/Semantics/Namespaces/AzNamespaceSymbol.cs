@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
@@ -14,21 +15,21 @@ namespace Bicep.Core.Semantics.Namespaces
 {
     public class AzNamespaceSymbol : NamespaceSymbol
     {
-        private static ObjectType GetRestrictedResourceGroupReturnValue(IEnumerable<FunctionArgumentSyntax> arguments)
+        private static ObjectType GetRestrictedResourceGroupReturnType(IEnumerable<FunctionArgumentSyntax> arguments)
             => new ResourceGroupScopeType(arguments, Enumerable.Empty<TypeProperty>());
 
-        private static ObjectType GetRestrictedSubscriptionReturnValue(IEnumerable<FunctionArgumentSyntax> arguments)
+        private static ObjectType GetRestrictedSubscriptionReturnType(IEnumerable<FunctionArgumentSyntax> arguments)
             => new SubscriptionScopeType(arguments, Enumerable.Empty<TypeProperty>());
 
-        private static ObjectType GetRestrictedManagementGroupReturnValue(IEnumerable<FunctionArgumentSyntax> arguments)
+        private static ObjectType GetRestrictedManagementGroupReturnType(IEnumerable<FunctionArgumentSyntax> arguments)
             => new ManagementGroupScopeType(arguments, Enumerable.Empty<TypeProperty>());
 
-        private static ObjectType GetRestrictedTenantReturnValue(IEnumerable<FunctionArgumentSyntax> arguments)
+        private static ObjectType GetRestrictedTenantReturnType(IEnumerable<FunctionArgumentSyntax> arguments)
             => new TenantScopeType(arguments, Enumerable.Empty<TypeProperty>());
 
-        private static ObjectType GetResourceGroupReturnValue(IEnumerable<FunctionArgumentSyntax> arguments)
+        private static ObjectType GetResourceGroupReturnType(IEnumerable<FunctionArgumentSyntax> arguments)
         {
-            var properties = new NamedObjectType("properties", TypeSymbolValidationFlags.Default, new []
+            var properties = new ObjectType("properties", TypeSymbolValidationFlags.Default, new []
             {
                 new TypeProperty("provisioningState", LanguageConstants.String),
             }, null);
@@ -45,7 +46,7 @@ namespace Bicep.Core.Semantics.Namespaces
             });
         }
 
-        private static ObjectType GetSubscriptionReturnValue(IEnumerable<FunctionArgumentSyntax> arguments)
+        private static ObjectType GetSubscriptionReturnType(IEnumerable<FunctionArgumentSyntax> arguments)
         {
             return new SubscriptionScopeType(arguments, new []
             {
@@ -55,49 +56,64 @@ namespace Bicep.Core.Semantics.Namespaces
                 new TypeProperty("displayName", LanguageConstants.String),
             });
         }
-        
-        private static NamedObjectType GetEnvironmentReturnType()
+
+        private static ObjectType GetProvidersSingleResourceReturnType()
         {
-            return new NamedObjectType("environment", TypeSymbolValidationFlags.Default, new []
+            // from https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/template-functions-resource?tabs=json#providers
+            return new ObjectType("ProviderResource", TypeSymbolValidationFlags.Default, new []
             {
-                new TypeProperty("name", LanguageConstants.String),
+                new TypeProperty("resourceType", LanguageConstants.String),
+                new TypeProperty("locations", new TypedArrayType(LanguageConstants.String, TypeSymbolValidationFlags.Default)),
+                new TypeProperty("apiVersions", new TypedArrayType(LanguageConstants.String, TypeSymbolValidationFlags.Default)),
+            }, null);
+        }
+
+        private static ObjectType GetProvidersSingleProviderReturnType()
+        {
+            // from https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/template-functions-resource?tabs=json#providers
+            return new ObjectType("Provider", TypeSymbolValidationFlags.Default, new []
+            {
+                new TypeProperty("namespace", LanguageConstants.String),
+                new TypeProperty("resourceTypes", new TypedArrayType(GetProvidersSingleResourceReturnType(), TypeSymbolValidationFlags.Default)),
+                }, null);
+        }
+        
+        private static ObjectType GetEnvironmentReturnType()
+        {
+            return new ObjectType("environment", TypeSymbolValidationFlags.Default, new []
+            {
+                new TypeProperty("activeDirectoryDataLake", LanguageConstants.String),
+                new TypeProperty("authentication", new ObjectType("authentication", TypeSymbolValidationFlags.Default, new []
+                {
+                    new TypeProperty("audiences", new TypedArrayType(LanguageConstants.String, TypeSymbolValidationFlags.Default)),
+                    new TypeProperty("identityProvider", LanguageConstants.String),
+                    new TypeProperty("loginEndpoint", LanguageConstants.String),
+                    new TypeProperty("tenant", LanguageConstants.String),
+                }, null)),
+                new TypeProperty("batch", LanguageConstants.String),
                 new TypeProperty("gallery", LanguageConstants.String),
                 new TypeProperty("graph", LanguageConstants.String),
-                new TypeProperty("portal", LanguageConstants.String),
                 new TypeProperty("graphAudience", LanguageConstants.String),
-                new TypeProperty("activeDirectoryDataLake", LanguageConstants.String),
-                new TypeProperty("batch", LanguageConstants.String),
                 new TypeProperty("media", LanguageConstants.String),
-                new TypeProperty("sqlManagement", LanguageConstants.String),
-                new TypeProperty("vmImageAliasDoc", LanguageConstants.String),
+                new TypeProperty("name", LanguageConstants.String),
+                new TypeProperty("portal", LanguageConstants.String),
                 new TypeProperty("resourceManager", LanguageConstants.String),
-                new TypeProperty("authentication", new NamedObjectType("authentication", TypeSymbolValidationFlags.Default, new []
-                {
-                    new TypeProperty("loginEndpoint", LanguageConstants.String),
-                    new TypeProperty("audiences", new TypedArrayType(LanguageConstants.String, TypeSymbolValidationFlags.Default)),
-                    new TypeProperty("tenant", LanguageConstants.String),
-                    new TypeProperty("identityProvider", LanguageConstants.String),
-                }, null)),
-                new TypeProperty("suffixes", new NamedObjectType("suffixes", TypeSymbolValidationFlags.Default, new []
+                new TypeProperty("sqlManagement", LanguageConstants.String),
+                new TypeProperty("suffixes", new ObjectType("suffixes", TypeSymbolValidationFlags.Default, new []
                 {
                     new TypeProperty("acrLoginServer", LanguageConstants.String),
                     new TypeProperty("azureDatalakeAnalyticsCatalogAndJob", LanguageConstants.String),
                     new TypeProperty("azureDatalakeStoreFileSystem", LanguageConstants.String),
+                    new TypeProperty("azureFrontDoorEndpointSuffix", LanguageConstants.String),
                     new TypeProperty("keyvaultDns", LanguageConstants.String),
                     new TypeProperty("sqlServerHostname", LanguageConstants.String),
                     new TypeProperty("storage", LanguageConstants.String),
                 }, null)),
-                new TypeProperty("locations", new TypedArrayType(new NamedObjectType("locations", TypeSymbolValidationFlags.Default, new []
-                {
-                    new  TypeProperty("id", LanguageConstants.String),
-                    new  TypeProperty("name", LanguageConstants.String),
-                    new  TypeProperty("displayName", LanguageConstants.String),
-                    new  TypeProperty("longitude", LanguageConstants.String),
-                }, null), TypeSymbolValidationFlags.Default)),
+                new TypeProperty("vmImageAliasDoc", LanguageConstants.String),
             }, null);
         }
 
-        private static NamedObjectType GetDeploymentReturnType(ResourceScope targetScope)
+        private static ObjectType GetDeploymentReturnType(ResourceScope targetScope)
         {
             // Note: there are other properties which could be included here, but they allow you to break out of the bicep world.
             // We're going to omit them and only include what is truly necessary. If we get feature requests to expose more properties, we should discuss this further.
@@ -105,9 +121,9 @@ namespace Bicep.Core.Semantics.Namespaces
             IEnumerable<TypeProperty> properties = new []
             {
                 new TypeProperty("name", LanguageConstants.String),
-                new TypeProperty("properties", new NamedObjectType("properties", TypeSymbolValidationFlags.Default, new []
+                new TypeProperty("properties", new ObjectType("properties", TypeSymbolValidationFlags.Default, new []
                 {
-                    new TypeProperty("templateLink", new NamedObjectType("properties", TypeSymbolValidationFlags.Default, new []
+                    new TypeProperty("templateLink", new ObjectType("properties", TypeSymbolValidationFlags.Default, new []
                     {
                         new TypeProperty("id", LanguageConstants.String),
                         new TypeProperty("uri", LanguageConstants.String),
@@ -122,7 +138,7 @@ namespace Bicep.Core.Semantics.Namespaces
                 properties = properties.Concat(locationProperty.AsEnumerable());
             }
 
-            return new NamedObjectType("deployment", TypeSymbolValidationFlags.Default, properties, null);
+            return new ObjectType("deployment", TypeSymbolValidationFlags.Default, properties, null);
         }
 
         private static IEnumerable<(FunctionOverload functionOverload, ResourceScope allowedScopes)> GetScopeFunctions()
@@ -133,59 +149,57 @@ namespace Bicep.Core.Semantics.Namespaces
             // return an empty object type (so that dot property access doesn't work), and generate as an ARM expression "createObject()" if anyone tries to access the object value.
             // This list should be kept in-sync with ScopeHelper.CanConvertToArmJson().
 
-            var allScopes = ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup;
-
             yield return (
                 new FunctionOverloadBuilder("tenant")
-                    .WithDynamicReturnType(GetRestrictedTenantReturnValue)
+                    .WithDynamicReturnType(GetRestrictedTenantReturnType)
                     .WithDescription("Returns the current tenant scope.")
                     .Build(),
-                allScopes);
+                ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup);
 
             yield return (
                 new FunctionOverloadBuilder("managementGroup")
-                    .WithDynamicReturnType(GetRestrictedManagementGroupReturnValue)
+                    .WithDynamicReturnType(GetRestrictedManagementGroupReturnType)
                     .WithDescription("Returns the current management group scope. **This function can only be used in managementGroup deployments.**")
                     .Build(),
                 ResourceScope.ManagementGroup);
             yield return (
                 new FunctionOverloadBuilder("managementGroup")
-                    .WithDynamicReturnType(GetRestrictedManagementGroupReturnValue)
+                    .WithDynamicReturnType(GetRestrictedManagementGroupReturnType)
                     .WithDescription("Returns the scope for a named management group.")
                     .WithRequiredParameter("name", LanguageConstants.String, "The unique identifier of the management group (not the display name).")
                     .Build(),
-                ResourceScope.Tenant | ResourceScope.ManagementGroup);
+                ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup);
 
             yield return (
                 new FunctionOverloadBuilder("subscription")
-                    .WithDynamicReturnType(GetSubscriptionReturnValue)
+                    .WithDynamicReturnType(GetSubscriptionReturnType)
                     .WithDescription("Returns the subscription scope for the current deployment. **This function can only be used in subscription and resourceGroup deployments.**")
                     .Build(),
                 ResourceScope.Subscription | ResourceScope.ResourceGroup);
             yield return (
                 new FunctionOverloadBuilder("subscription")
-                    .WithDynamicReturnType(GetRestrictedSubscriptionReturnValue)
+                    .WithDynamicReturnType(GetRestrictedSubscriptionReturnType)
                     .WithDescription("Returns a named subscription scope. **This function can only be used in subscription and resourceGroup deployments.**")
                     .WithRequiredParameter("subscriptionId", LanguageConstants.String, "The subscription ID")
                     .Build(),
-                allScopes);
+                ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup);
 
             yield return (
                 new FunctionOverloadBuilder("resourceGroup")
-                    .WithDynamicReturnType(GetResourceGroupReturnValue)
+                    .WithDynamicReturnType(GetResourceGroupReturnType)
                     .WithDescription("Returns the current resource group scope. **This function can only be used in resourceGroup deployments.**")
                     .Build(),
                 ResourceScope.ResourceGroup);
             yield return (
                 new FunctionOverloadBuilder("resourceGroup")
-                    .WithDynamicReturnType(GetRestrictedResourceGroupReturnValue)
+                    .WithDynamicReturnType(GetRestrictedResourceGroupReturnType)
                     .WithDescription("Returns a named resource group scope. **This function can only be used in subscription and resourceGroup deployments.**")
                     .WithRequiredParameter("resourceGroupName", LanguageConstants.String, "The resource group name")
                     .Build(),
                 ResourceScope.Subscription | ResourceScope.ResourceGroup);
             yield return (
                 new FunctionOverloadBuilder("resourceGroup")
-                    .WithDynamicReturnType(GetRestrictedResourceGroupReturnValue)
+                    .WithDynamicReturnType(GetRestrictedResourceGroupReturnType)
                     .WithDescription("Returns a named resource group scope. **This function can only be used in subscription and resourceGroup deployments.**")
                     .WithRequiredParameter("subscriptionId", LanguageConstants.String, "The subscription ID")
                     .WithRequiredParameter("resourceGroupName", LanguageConstants.String, "The resource group name")
@@ -286,12 +300,17 @@ namespace Bicep.Core.Semantics.Namespaces
                 .WithVariableParameter("resourceName",LanguageConstants.String, minimumCount: 1, "The extension resource name segment")
                 .Build();
 
-            // TODO: Not sure about return type
             yield return new FunctionOverloadBuilder("providers")
-                .WithReturnType(LanguageConstants.Array)
+                .WithReturnType(GetProvidersSingleProviderReturnType())
                 .WithDescription("Returns information about a resource provider and its supported resource types. If you don't provide a resource type, the function returns all the supported types for the resource provider.")
                 .WithRequiredParameter("providerNamespace",LanguageConstants.String, "the namespace of the provider")
-                .WithOptionalParameter("resourceType",LanguageConstants.String, "The type of resource within the specified namespace")
+                .Build();
+
+            yield return new FunctionOverloadBuilder("providers")
+                .WithReturnType(GetProvidersSingleResourceReturnType())
+                .WithDescription("Returns information about a resource provider and its supported resource types. If you don't provide a resource type, the function returns all the supported types for the resource provider.")
+                .WithRequiredParameter("providerNamespace",LanguageConstants.String, "the namespace of the provider")
+                .WithRequiredParameter("resourceType",LanguageConstants.String, "The type of resource within the specified namespace")
                 .Build();
 
             // TODO: return type is string[]
@@ -328,7 +347,7 @@ namespace Bicep.Core.Semantics.Namespaces
         }
 
         public AzNamespaceSymbol(ResourceScope resourceScope)
-            : base("az", GetAzOverloads(resourceScope), ImmutableArray<BannedFunction>.Empty)
+            : base("az", GetAzOverloads(resourceScope), ImmutableArray<BannedFunction>.Empty, ImmutableArray<Decorator>.Empty) 
         {
         }
     }

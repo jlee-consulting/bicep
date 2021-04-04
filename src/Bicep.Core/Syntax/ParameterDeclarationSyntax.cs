@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Navigation;
@@ -10,9 +12,10 @@ using Bicep.Core.TypeSystem;
 
 namespace Bicep.Core.Syntax
 {
-    public class ParameterDeclarationSyntax : SyntaxBase, INamedDeclarationSyntax
+    public class ParameterDeclarationSyntax : StatementSyntax, ITopLevelNamedDeclarationSyntax
     {
-        public ParameterDeclarationSyntax(Token keyword, IdentifierSyntax name, SyntaxBase type, SyntaxBase? modifier)
+        public ParameterDeclarationSyntax(IEnumerable<SyntaxBase> leadingNodes, Token keyword, IdentifierSyntax name, SyntaxBase type, SyntaxBase? modifier)
+            : base(leadingNodes)
         {
             AssertKeyword(keyword, nameof(keyword), LanguageConstants.ParameterKeyword);
             AssertSyntaxType(name, nameof(name), typeof(IdentifierSyntax));
@@ -37,7 +40,7 @@ namespace Bicep.Core.Syntax
         public override void Accept(ISyntaxVisitor visitor)
             => visitor.VisitParameterDeclarationSyntax(this);
 
-        public override TextSpan Span => TextSpan.Between(this.Keyword, TextSpan.LastNonNull(Type, Modifier));
+        public override TextSpan Span => TextSpan.Between(this.LeadingNodes.FirstOrDefault() ?? this.Keyword, TextSpan.LastNonNull(Type, Modifier));
 
         /// <summary>
         /// Gets the declared type syntax of this parameter declaration. Certain parse errors will cause it to be null.
@@ -59,12 +62,13 @@ namespace Bicep.Core.Syntax
             return declaredType;
         }
 
-        public TypeSymbol GetAssignedType(ITypeManager typeManager)
+        public TypeSymbol GetAssignedType(ITypeManager typeManager, ArraySyntax? allowedSyntax)
         {
             var assignedType = this.GetDeclaredType();
 
-            var allowedSyntax = SyntaxHelper.TryGetAllowedSyntax(this);
-            if (allowedSyntax != null && !allowedSyntax.Items.Any())
+            // TODO: remove SyntaxHelper.TryGetAllowedSyntax when we drop parameter modifiers support.
+            allowedSyntax ??= SyntaxHelper.TryGetAllowedSyntax(this);
+            if (allowedSyntax is not null && !allowedSyntax.Items.Any())
             {
                 return ErrorType.Create(DiagnosticBuilder.ForPosition(allowedSyntax).AllowedMustContainItems());
             }

@@ -1,6 +1,13 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "dev",
+      "templateHash": "15293078327950125013"
+    }
+  },
   "parameters": {
     "appName": {
       "type": "string",
@@ -30,6 +37,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "7674479365305797854"
+            }
+          },
           "parameters": {
             "skuName": {
               "type": "string",
@@ -139,12 +153,19 @@
         "mode": "Incremental",
         "parameters": {
           "appName": {
-            "value": "[reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'webAppPlanDeploy'), '2019-10-01').outputs.appServiceName.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'webAppPlanDeploy'), '2019-10-01').outputs.appServiceName.value]"
           }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "7493948053249380306"
+            }
+          },
           "parameters": {
             "appName": {
               "type": "string"
@@ -216,7 +237,7 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'webAppPlanDeploy')]"
+        "[resourceId('Microsoft.Resources/deployments', 'webAppPlanDeploy')]"
       ]
     }
   ]

@@ -38,3 +38,27 @@ module resourceGroupModuleDuplicateName2 'modules/resourceGroup.bicep' = {
   scope: resourceGroup('RG')
 }
 
+module unsupportedScopeManagementGroup 'modules/managementGroup.bicep' = {
+//@[7:38) Module unsupportedScopeManagementGroup. Type: module. Declaration start char: 0, length: 149
+  name: 'unsupportedScopeManagementGroup'
+  scope: managementGroup('MG')
+}
+
+module singleRgModule 'modules/passthrough.bicep' = {
+//@[7:21) Module singleRgModule. Type: module. Declaration start char: 0, length: 143
+  name: 'single-rg'
+  params: {
+    myInput: 'stuff'
+  }
+  scope: resourceGroup('test')
+}
+
+module singleRgModule2 'modules/passthrough.bicep' = {
+//@[7:22) Module singleRgModule2. Type: module. Declaration start char: 0, length: 138
+  name: 'single-rg2'
+  params: {
+    myInput: 'stuff'
+  }
+  scope: singleRgModule
+}
+

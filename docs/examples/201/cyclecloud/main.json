@@ -1,6 +1,13 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "dev",
+      "templateHash": "16142692707918007690"
+    }
+  },
   "parameters": {
     "location": {
       "type": "string",
@@ -75,6 +82,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "2069337511543626233"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -190,7 +204,7 @@
             "value": "[variables('customData')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
           },
           "userAssignedIdentity": {
             "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'CycleCloud-MI')]"
@@ -199,6 +213,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "3236288366958585083"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -317,7 +338,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'CycleCloud-MI')]",
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network')]"
+        "[resourceId('Microsoft.Resources/deployments', 'network')]"
       ]
     }
   ]

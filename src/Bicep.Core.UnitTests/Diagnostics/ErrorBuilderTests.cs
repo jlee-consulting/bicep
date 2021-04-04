@@ -119,6 +119,11 @@ namespace Bicep.Core.UnitTests.Diagnostics
                 return 0;
             }
 
+            if(parameter.ParameterType == typeof(long) || parameter.ParameterType == typeof(long?))
+            {
+                return 0;
+            }
+
             if (parameter.ParameterType == typeof(bool) || parameter.ParameterType == typeof(bool?))
             {
                 return false;
@@ -132,6 +137,11 @@ namespace Bicep.Core.UnitTests.Diagnostics
             if (parameter.ParameterType == typeof(ResourceTypeReference))
             {
                 return ResourceTypeReference.Parse("Mock.ErrorParam/mockResources@2020-01-01");
+            }
+
+            if (parameter.ParameterType == typeof(ResourceScope))
+            {
+                return ResourceScope.ResourceGroup;
             }
 
             return $"<param_{index}>";

@@ -42,11 +42,8 @@ async function launchLanguageService(
   getLogger().debug(`Found language server at '${languageServerPath}'.`);
 
   const serverExecutable: lsp.Executable = {
-    command: `.${path.sep}${path.basename(dotnetCommandPath)}`,
+    command: dotnetCommandPath,
     args: [languageServerPath],
-    options: {
-      cwd: path.dirname(dotnetCommandPath),
-    },
   };
 
   const serverOptions: lsp.ServerOptions = {
@@ -58,6 +55,20 @@ async function launchLanguageService(
     documentSelector: [{ language: "bicep" }],
     progressOnInitialization: true,
     outputChannel,
+    middleware: {
+      provideDocumentFormattingEdits: (document, options, token, next) =>
+        next(
+          document,
+          {
+            ...options,
+            insertFinalNewline:
+              vscode.workspace
+                .getConfiguration("files")
+                .get("insertFinalNewline") ?? false,
+          },
+          token
+        ),
+    },
     synchronize: {
       // These file watcher globs should be kept in-sync with those defined in BicepDidChangeWatchedFilesHander.cs
       fileEvents: [

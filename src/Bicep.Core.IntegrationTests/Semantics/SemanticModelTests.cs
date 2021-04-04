@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Navigation;
@@ -47,7 +48,7 @@ namespace Bicep.Core.IntegrationTests.Semantics
         [TestMethod]
         public void EndOfFileFollowingSpaceAfterParameterKeyWordShouldNotThrow()
         {
-            var compilation = new Compilation(TestResourceTypeProvider.Create(), SyntaxFactory.CreateFromText("parameter "));
+            var compilation = new Compilation(TestResourceTypeProvider.Create(), SyntaxTreeGroupingFactory.CreateFromText("parameter "));
             compilation.GetEntrypointSemanticModel().GetParseDiagnostics();
         }
 
@@ -108,7 +109,8 @@ namespace Bicep.Core.IntegrationTests.Semantics
                         s is ModuleSymbol ||
                         s is OutputSymbol ||
                         s is FunctionSymbol ||
-                        s is NamespaceSymbol);
+                        s is NamespaceSymbol ||
+                        s is LocalVariableSymbol);
                 }
                 else
                 {
@@ -121,7 +123,8 @@ namespace Bicep.Core.IntegrationTests.Semantics
                         s is ModuleSymbol ||
                         s is OutputSymbol ||
                         s is FunctionSymbol ||
-                        s is NamespaceSymbol);
+                        s is NamespaceSymbol ||
+                        s is LocalVariableSymbol);
                 }
 
                 var foundRefs = model.FindReferences(symbol!);

@@ -66,25 +66,6 @@ namespace Bicep.Core.TypeSystem.Az
             return flags;
         }
 
-        private static ObjectType AddBicepResourceProperties(ObjectType objectType, Azure.Bicep.Types.Concrete.ScopeType scope)
-        {
-            var properties = objectType.Properties.Values.ToList();
-            if (scope.HasFlag(Azure.Bicep.Types.Concrete.ScopeType.Extension) || scope == Azure.Bicep.Types.Concrete.ScopeType.Unknown)
-            {
-                var scopeRequiredFlag = (scope == Azure.Bicep.Types.Concrete.ScopeType.Extension) ? TypePropertyFlags.Required : TypePropertyFlags.None;
-                properties.Add(new TypeProperty("scope", new ResourceReferenceType("resource", ResourceScope.Resource), TypePropertyFlags.WriteOnly | scopeRequiredFlag));
-            }
-
-            // TODO: remove 'dependsOn' from the type library and add it here
-
-            return new NamedObjectType(
-                objectType.Name,
-                objectType.ValidationFlags,
-                properties,
-                objectType.AdditionalPropertiesType,
-                objectType.AdditionalPropertiesFlags);
-        }
-
         private TypeSymbol ToTypeSymbol(Azure.Bicep.Types.Concrete.TypeBase typeBase, bool isResourceBodyType)
         {
             switch (typeBase)
@@ -106,7 +87,7 @@ namespace Bicep.Core.TypeSystem.Az
                     var additionalProperties = objectType.AdditionalProperties != null ? GetTypeReference(objectType.AdditionalProperties) : null;
                     var properties = objectType.Properties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value));
 
-                    return new NamedObjectType(objectType.Name, GetValidationFlags(isResourceBodyType), properties, additionalProperties, TypePropertyFlags.None);
+                    return new ObjectType(objectType.Name, GetValidationFlags(isResourceBodyType), properties, additionalProperties, TypePropertyFlags.None);
                 }
                 case Azure.Bicep.Types.Concrete.ArrayType arrayType:
                 {
@@ -116,26 +97,7 @@ namespace Bicep.Core.TypeSystem.Az
                 {
                     var resourceTypeReference = ResourceTypeReference.Parse(resourceType.Name);
                     var bodyType = GetTypeSymbol(resourceType.Body.Type, true);
-
-                    switch (bodyType)
-                    {
-                        case ObjectType bodyObjectType:
-                            bodyType = AddBicepResourceProperties(bodyObjectType, resourceType.ScopeType);
-                            break;
-                        case DiscriminatedObjectType bodyDiscriminatedType:
-                            var bodyTypes = bodyDiscriminatedType.UnionMembersByKey.Values.ToList().Select(x => x.Type as ObjectType ?? throw new ArgumentException());
-                            bodyTypes = bodyTypes.Select(x => AddBicepResourceProperties(x, resourceType.ScopeType));
-                            bodyType = new DiscriminatedObjectType(
-                                bodyDiscriminatedType.Name,
-                                bodyDiscriminatedType.ValidationFlags,
-                                bodyDiscriminatedType.DiscriminatorKey,
-                                bodyTypes);
-                            break;
-                        default:
-                            throw new ArgumentException();
-                    }
-
-                    return new ResourceType(resourceTypeReference, bodyType);
+                    return new ResourceType(resourceTypeReference, ToResourceScope(resourceType.ScopeType), bodyType);
                 }
                 case Azure.Bicep.Types.Concrete.UnionType unionType:
                 {
@@ -154,7 +116,7 @@ namespace Bicep.Core.TypeSystem.Az
             }
         }
 
-        private NamedObjectType ToCombinedType(IEnumerable<KeyValuePair<string, Azure.Bicep.Types.Concrete.ObjectProperty>> baseProperties, string name, Azure.Bicep.Types.Concrete.ITypeReference extendedType, bool isResourceBodyType)
+        private ObjectType ToCombinedType(IEnumerable<KeyValuePair<string, Azure.Bicep.Types.Concrete.ObjectProperty>> baseProperties, string name, Azure.Bicep.Types.Concrete.ITypeReference extendedType, bool isResourceBodyType)
         {
             if (!(extendedType.Type is Azure.Bicep.Types.Concrete.ObjectType objectType))
             {
@@ -169,7 +131,7 @@ namespace Bicep.Core.TypeSystem.Az
                 extendedProperties[property.Key] = property.Value;
             }
 
-            return new NamedObjectType(name, GetValidationFlags(isResourceBodyType), extendedProperties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value)), additionalProperties, TypePropertyFlags.None);
+            return new ObjectType(name, GetValidationFlags(isResourceBodyType), extendedProperties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value)), additionalProperties, TypePropertyFlags.None);
         }
 
         private static TypeSymbolValidationFlags GetValidationFlags(bool isResourceBodyType)
@@ -182,6 +144,23 @@ namespace Bicep.Core.TypeSystem.Az
 
             // in all other places, we should allow some wiggle room so that we don't block compilation if there are any swagger inaccuracies
             return TypeSymbolValidationFlags.WarnOnTypeMismatch;
+        }
+
+        private static ResourceScope ToResourceScope(Azure.Bicep.Types.Concrete.ScopeType input)
+        {
+            if (input == Azure.Bicep.Types.Concrete.ScopeType.Unknown)
+            {
+                return ResourceScope.Tenant | ResourceScope.ManagementGroup | ResourceScope.Subscription | ResourceScope.ResourceGroup | ResourceScope.Resource;
+            }
+
+            var output = ResourceScope.None;
+            output |= input.HasFlag(Azure.Bicep.Types.Concrete.ScopeType.Extension) ? ResourceScope.Resource : ResourceScope.None;
+            output |= input.HasFlag(Azure.Bicep.Types.Concrete.ScopeType.Tenant) ? ResourceScope.Tenant : ResourceScope.None;
+            output |= input.HasFlag(Azure.Bicep.Types.Concrete.ScopeType.ManagementGroup) ? ResourceScope.ManagementGroup : ResourceScope.None;
+            output |= input.HasFlag(Azure.Bicep.Types.Concrete.ScopeType.Subscription) ? ResourceScope.Subscription : ResourceScope.None;
+            output |= input.HasFlag(Azure.Bicep.Types.Concrete.ScopeType.ResourceGroup) ? ResourceScope.ResourceGroup : ResourceScope.None;
+
+            return output;
         }
     }
 }

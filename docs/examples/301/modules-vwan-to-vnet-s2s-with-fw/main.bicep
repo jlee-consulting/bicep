@@ -1,30 +1,17 @@
 targetScope = 'subscription'
 
-param location string {
-  default: 'westeurope'
-  metadata: {
-    description: 'Specify the location for the hub Virtual Network and its related resources'
-  }
-}
-param vwanlocation string {
-  default: 'eastus'
-  metadata: {
-    description: 'Specify the location for the vWAN and its related resources'
-  }
-}
-param nameprefix string {
-  default: 'contoso'
-  metadata: {
-    description: 'Specify the name prefix for all resources and resource groups'
-  }
-}
-param psk string {
-  secure: true
-  default: uniqueString(subscription().id)
-  metadata: {
-    'description': 'Pre-Shared Key used to establish the site to site tunnel between the Virtual Hub and On-Prem VNet'
-  }
-}
+@description('Specify the location for the hub Virtual Network and its related resources')
+param location string = 'westeurope'
+
+@description('Specify the location for the vWAN and its related resources')
+param vwanlocation string = 'eastus'
+
+@description('Specify the name prefix for all resources and resource groups')
+param nameprefix string = 'contoso'
+
+@secure()
+@description('Pre-Shared Key used to establish the site to site tunnel between the Virtual Hub and On-Prem VNet')
+param psk string = uniqueString(subscription().id)
 
 var vnetname = '${nameprefix}-vnet'
 var vpngwname = '${vnetname}-vpn-gw'
@@ -53,7 +40,7 @@ resource vwanrg 'Microsoft.Resources/resourceGroups@2020-06-01' = {
 
 module vnet './vnet.bicep' = {
   name: vnetname
-  scope: resourceGroup(hubrg.name)
+  scope: hubrg
   params: {
     vnetname: vnetname
     location: location
@@ -67,7 +54,7 @@ module vnet './vnet.bicep' = {
 
 module vpngw './vnetvpngw.bicep' = {
   name: 'vpngw-deploy'
-  scope: resourceGroup(hubrg.name)
+  scope: hubrg
   params: {
     location: location
     vpngwname: vpngwname
@@ -79,7 +66,7 @@ module vpngw './vnetvpngw.bicep' = {
 
 module fwpolicy './azfwpolicy.bicep' = {
   name: 'fwpolicy-deploy'
-  scope: resourceGroup(hubrg.name)
+  scope: hubrg
   params: {
     policyname: fwpolicyname
     location: location
@@ -88,7 +75,7 @@ module fwpolicy './azfwpolicy.bicep' = {
 
 module fwpip './azfwpip.bicep' = {
   name: 'pip-deploy'
-  scope: resourceGroup(hubrg.name)
+  scope: hubrg
   params: {
     location: location
     pipname: fwpipname
@@ -99,7 +86,7 @@ module fwpip './azfwpip.bicep' = {
 
 module fw './azfw.bicep' = {
   name: 'fw-deploy'
-  scope: resourceGroup(hubrg.name)
+  scope: hubrg
   params: {
     location: location
     fwname: fwname
@@ -112,7 +99,7 @@ module fw './azfw.bicep' = {
 
 module vwan './vwan.bicep' = {
   name: 'vwan-deploy'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     location: vwanlocation
     wanname: vwanname
@@ -122,7 +109,7 @@ module vwan './vwan.bicep' = {
 
 module vhub './vhub.bicep' = {
   name: 'vhub-deploy'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     location: vwanlocation
     hubname: vhubname
@@ -133,7 +120,7 @@ module vhub './vhub.bicep' = {
 
 module vhubfwpolicy './azfwpolicy.bicep' = {
   name: 'vhubfwpolicy-deploy'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     policyname: vhubfwpolicyname
     location: vwanlocation
@@ -142,7 +129,7 @@ module vhubfwpolicy './azfwpolicy.bicep' = {
 
 module vhubfw './azfw.bicep' = {
   name: 'vhubfw-deploy'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     location: vwanlocation
     fwname: vhubfwname
@@ -155,7 +142,7 @@ module vhubfw './azfw.bicep' = {
 
 module vhubvpngw './vhubvpngw.bicep' = {
   name: 'vhubvpngw'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     location: vwanlocation
     hubvpngwname: vhubvpngwname
@@ -166,7 +153,7 @@ module vhubvpngw './vhubvpngw.bicep' = {
 
 module vwanvpnsite './vwanvpnsite.bicep' = {
   name: 'vwanvpnsite-deploy'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     vpnsitename: '${location}-vpnsite'
     location: vwanlocation
@@ -180,7 +167,7 @@ module vwanvpnsite './vwanvpnsite.bicep' = {
 
 module vhubs2s './vhubvpngwcon.bicep' = {
   name: 'vhubs2s-deploy'
-  scope: resourceGroup(vwanrg.name)
+  scope: vwanrg
   params: {
     hubvpngwname: vhubvpngw.outputs.name
     psk: psk
@@ -190,7 +177,7 @@ module vhubs2s './vhubvpngwcon.bicep' = {
 
 module vnets2s './vnetsitetosite.bicep' = {
   name: 'vnets2s-deploy'
-  scope: resourceGroup(hubrg.name)
+  scope: hubrg
   params: {
     location: location
     localnetworkgwname: lgwname

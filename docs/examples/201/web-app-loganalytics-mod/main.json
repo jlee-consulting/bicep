@@ -1,6 +1,13 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "dev",
+      "templateHash": "16635523466382666048"
+    }
+  },
   "parameters": {
     "appName": {
       "type": "string",
@@ -26,6 +33,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "11726653625731348975"
+            }
+          },
           "parameters": {
             "skuName": {
               "type": "string",
@@ -86,15 +100,22 @@
             "value": "[parameters('appName')]"
           },
           "appServicePlanID": {
-            "value": "[reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'appServicePlanDeploy'), '2019-10-01').outputs.appServicePlanID.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appServicePlanDeploy'), '2019-10-01').outputs.appServicePlanID.value]"
           },
           "APPINSIGHTS_INSTRUMENTATIONKEY": {
-            "value": "[reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'appInsightsDeploy'), '2019-10-01').outputs.APPINSIGHTS_INSTRUMENTATIONKEY.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsightsDeploy'), '2019-10-01').outputs.APPINSIGHTS_INSTRUMENTATIONKEY.value]"
           }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "11879679526796717362"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -185,8 +206,8 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'appInsightsDeploy')]",
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'appServicePlanDeploy')]"
+        "[resourceId('Microsoft.Resources/deployments', 'appInsightsDeploy')]",
+        "[resourceId('Microsoft.Resources/deployments', 'appServicePlanDeploy')]"
       ]
     },
     {
@@ -203,12 +224,19 @@
             "value": "[parameters('appName')]"
           },
           "logAnalaticsWorkspaceResourceID": {
-            "value": "[reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'logAnalyticsWorkspaceDeploy'), '2019-10-01').outputs.logAnalaticsWorkspaceResourceID.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'logAnalyticsWorkspaceDeploy'), '2019-10-01').outputs.logAnalaticsWorkspaceResourceID.value]"
           }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "8952477625281734700"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -251,7 +279,7 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'logAnalyticsWorkspaceDeploy')]"
+        "[resourceId('Microsoft.Resources/deployments', 'logAnalyticsWorkspaceDeploy')]"
       ]
     },
     {
@@ -271,6 +299,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "15135260870848174745"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",

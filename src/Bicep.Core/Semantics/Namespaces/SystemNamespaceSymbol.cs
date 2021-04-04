@@ -1,7 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using Bicep.Core.Diagnostics;
+using Bicep.Core.Extensions;
+using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
 
 namespace Bicep.Core.Semantics.Namespaces
@@ -290,7 +295,7 @@ namespace Bicep.Core.Semantics.Namespaces
                 .Build(),
 
             new FunctionOverloadBuilder("range")
-                .WithReturnType(LanguageConstants.Array)
+                .WithReturnType(new TypedArrayType(LanguageConstants.Int, TypeSymbolValidationFlags.Default))
                 .WithDescription("Creates an array of integers from a starting integer and containing a number of items.")
                 .WithRequiredParameter("startIndex", LanguageConstants.Int, "The first integer in the array. The sum of startIndex and count must be no greater than 2147483647.")
                 .WithRequiredParameter("count", LanguageConstants.Int, "The number of integers in the array. Must be non-negative integer up to 10000.")
@@ -413,10 +418,148 @@ namespace Bicep.Core.Semantics.Namespaces
             BannedFunction.CreateForOperator("equals", "=="),
             BannedFunction.CreateForOperator("not", "!"),
             BannedFunction.CreateForOperator("and", "&&"),
-            BannedFunction.CreateForOperator("or", "||")
+            BannedFunction.CreateForOperator("or", "||"),
+            BannedFunction.CreateForOperator("coalesce", "??")
         }.ToImmutableArray();
 
-        public SystemNamespaceSymbol() : base("sys", SystemOverloads, BannedFunctions)
+        private static IEnumerable<Decorator> GetSystemDecorators()
+        {
+            static DecoratorEvaluator MergeToTargetObject(string propertyName, Func<DecoratorSyntax, SyntaxBase> propertyValueSelector) =>
+                (decoratorSyntax, _, targetObject) =>
+                    targetObject.MergeProperty(propertyName, propertyValueSelector(decoratorSyntax));
+
+            static SyntaxBase SingleArgumentSelector(DecoratorSyntax decoratorSyntax) => decoratorSyntax.Arguments.Single().Expression;
+
+            static long? TryGetIntegerLiteralValue(SyntaxBase syntax) => syntax switch
+            {
+                UnaryOperationSyntax { Operator: UnaryOperator.Minus } unaryOperatorSyntax
+                    when unaryOperatorSyntax.Expression is IntegerLiteralSyntax integerLiteralSyntax => -1 * integerLiteralSyntax.Value,
+                IntegerLiteralSyntax integerLiteralSyntax => integerLiteralSyntax.Value,
+                _ => null,
+            };
+
+            static void ValidateLength(string decoratorName, DecoratorSyntax decoratorSyntax, TypeSymbol targetType, ITypeManager typeManager, IDiagnosticWriter diagnosticWriter)
+            {
+                var lengthSyntax = SingleArgumentSelector(decoratorSyntax);
+
+                if (TryGetIntegerLiteralValue(lengthSyntax) is not null and < 0)
+                {
+                    diagnosticWriter.Write(DiagnosticBuilder.ForPosition(lengthSyntax).LengthMustNotBeNegative());
+                }
+            }
+
+            yield return new DecoratorBuilder("secure")
+                .WithDescription("Makes the parameter a secure parameter.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithAttachableType(UnionType.Create(LanguageConstants.String, LanguageConstants.Object))
+                .WithEvaluator((_, targetType, targetObject) =>
+                {
+                    if (ReferenceEquals(targetType, LanguageConstants.String))
+                    {
+                        return targetObject.MergeProperty("type", "secureString");
+                    }
+
+                    if (ReferenceEquals(targetType, LanguageConstants.Object))
+                    {
+                        return targetObject.MergeProperty("type", "secureObject");
+                    }
+
+                    return targetObject;
+                })
+                .Build();
+
+            yield return new DecoratorBuilder("allowed")
+                .WithDescription("Defines the allowed values of the parameter.")
+                .WithRequiredParameter("values", LanguageConstants.Array, "The allowed values.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithValidator((_, decoratorSyntax, targetType, typeManager, diagnosticWriter) =>
+                     TypeValidator.NarrowTypeAndCollectDiagnostics(
+                            typeManager,
+                        SingleArgumentSelector(decoratorSyntax),
+                        new TypedArrayType(targetType, TypeSymbolValidationFlags.Default),
+                        diagnosticWriter))
+                .WithEvaluator(MergeToTargetObject("allowedValues", SingleArgumentSelector))
+                .Build();
+
+            yield return new DecoratorBuilder("minValue")
+                .WithDescription("Defines the minimum value of the parameter.")
+                .WithRequiredParameter("value", LanguageConstants.Int, "The minimum value.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithAttachableType(LanguageConstants.Int)
+                .WithEvaluator(MergeToTargetObject("minValue", SingleArgumentSelector))
+                .Build();
+
+            yield return new DecoratorBuilder("maxValue")
+                .WithDescription("Defines the maximum value of the parameter.")
+                .WithRequiredParameter("value", LanguageConstants.Int, "The maximum value.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithAttachableType(LanguageConstants.Int)
+                .WithEvaluator(MergeToTargetObject("maxValue", SingleArgumentSelector))
+                .Build();
+
+            yield return new DecoratorBuilder("minLength")
+                .WithDescription("Defines the minimum length of the parameter.")
+                .WithRequiredParameter("length", LanguageConstants.Int, "The minimum length.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithAttachableType(UnionType.Create(LanguageConstants.String, LanguageConstants.Array))
+                .WithValidator(ValidateLength)
+                .WithEvaluator(MergeToTargetObject("minLength", SingleArgumentSelector))
+                .Build();
+
+            yield return new DecoratorBuilder("maxLength")
+                .WithDescription("Defines the maximum length of the parameter.")
+                .WithRequiredParameter("length", LanguageConstants.Int, "The maximum length.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithAttachableType(UnionType.Create(LanguageConstants.String, LanguageConstants.Array))
+                .WithValidator(ValidateLength)
+                .WithEvaluator(MergeToTargetObject("maxLength", SingleArgumentSelector))
+                .Build();
+
+            yield return new DecoratorBuilder("metadata")
+                .WithDescription("Defines metadata of the parameter.")
+                .WithRequiredParameter("object", LanguageConstants.Object, "The metadata object.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithValidator((_, decoratorSyntax, _, typeManager, diagnosticWriter) => 
+                    TypeValidator.NarrowTypeAndCollectDiagnostics(typeManager, SingleArgumentSelector(decoratorSyntax), LanguageConstants.ParameterModifierMetadata, diagnosticWriter))
+                .WithEvaluator(MergeToTargetObject("metadata", SingleArgumentSelector))
+                .Build();
+
+            yield return new DecoratorBuilder("description")
+                .WithDescription("Describes the parameter.")
+                .WithRequiredParameter("text", LanguageConstants.String, "The description.")
+                .WithFlags(FunctionFlags.ParameterDecorator)
+                .WithEvaluator(MergeToTargetObject("metadata", decoratorSyntax => SyntaxFactory.CreateObject(
+                    SyntaxFactory.CreateObjectProperty("description", SingleArgumentSelector(decoratorSyntax)).AsEnumerable())))
+                .Build();
+
+            yield return new DecoratorBuilder("batchSize")
+                .WithDescription("Causes the resource or module for-expression to be run in sequential batches of specified size instead of the default behavior where all the resources or modules are deployed in parallel.")
+                .WithRequiredParameter("batchSize", LanguageConstants.Int, "The size of the batch")
+                .WithFlags(FunctionFlags.ResourceOrModuleDecorator)
+                // the decorator is constrained to resources and modules already - checking for array alone is simple and should be sufficient
+                .WithValidator((decoratorName, decoratorSyntax, targetType, typeManager, diagnosticWriter) =>
+                {
+                    if (!TypeValidator.AreTypesAssignable(targetType, LanguageConstants.Array))
+                    {
+                        // the resource/module declaration is not a collection
+                        // (the compile-time constnat and resource/module placement is already enforced, so we don't need a deeper type check)
+                        diagnosticWriter.Write(DiagnosticBuilder.ForPosition(decoratorSyntax).BatchSizeNotAllowed(decoratorName));
+                    }
+
+                    const long MinimumBatchSize = 1;
+                    SyntaxBase batchSizeSyntax = SingleArgumentSelector(decoratorSyntax);
+                    long? batchSize = TryGetIntegerLiteralValue(batchSizeSyntax);
+
+                    if (batchSize is not null and < MinimumBatchSize)
+                    {
+                        diagnosticWriter.Write(DiagnosticBuilder.ForPosition(batchSizeSyntax).BatchSizeTooSmall(batchSize.Value, MinimumBatchSize));
+                    }
+                })
+                .WithEvaluator(MergeToTargetObject("batchSize", SingleArgumentSelector))
+                .Build();
+        }
+
+        public SystemNamespaceSymbol() : base("sys", SystemOverloads, BannedFunctions, GetSystemDecorators())
         {
         }
     }

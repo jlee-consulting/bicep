@@ -1,6 +1,13 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "dev",
+      "templateHash": "10107859720254818520"
+    }
+  },
   "parameters": {
     "location": {
       "type": "string",
@@ -62,6 +69,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "9151756394915789577"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -177,7 +191,7 @@
             "value": "[resourceId('Microsoft.Compute/proximityPlacementGroups', 'Zone1')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
           },
           "vmName": {
             "value": "anchor"
@@ -189,6 +203,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "12612183363455163711"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -318,7 +339,7 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network')]",
+        "[resourceId('Microsoft.Resources/deployments', 'network')]",
         "[resourceId('Microsoft.Compute/proximityPlacementGroups', 'Zone1')]"
       ]
     },
@@ -339,7 +360,7 @@
             "value": "[resourceId('Microsoft.Compute/availabilitySets', 'as1')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
           },
           "vmName": {
             "value": "vm01"
@@ -348,6 +369,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "266419871831429912"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -446,7 +474,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Compute/availabilitySets', 'as1')]",
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network')]"
+        "[resourceId('Microsoft.Resources/deployments', 'network')]"
       ]
     },
     {
@@ -466,7 +494,7 @@
             "value": "[resourceId('Microsoft.Compute/availabilitySets', 'as1')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
           },
           "vmName": {
             "value": "vm02"
@@ -475,6 +503,13 @@
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "266419871831429912"
+            }
+          },
           "parameters": {
             "location": {
               "type": "string",
@@ -573,7 +608,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Compute/availabilitySets', 'as1')]",
-        "[extensionResourceId(resourceGroup().id, 'Microsoft.Resources/deployments', 'network')]"
+        "[resourceId('Microsoft.Resources/deployments', 'network')]"
       ]
     }
   ]

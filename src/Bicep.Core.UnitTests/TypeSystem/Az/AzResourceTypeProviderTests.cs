@@ -23,28 +23,28 @@ namespace Bicep.Core.UnitTests.TypeSystem.Az
     public class AzResourceTypeProviderTests
     {
         [DataTestMethod]
-        [DataRow(ResourceScope.Tenant)]
-        [DataRow(ResourceScope.ManagementGroup)]
-        [DataRow(ResourceScope.Subscription)]
-        [DataRow(ResourceScope.ResourceGroup)]
-        public void AzResourceTypeProvider_can_deserialize_all_types_without_throwing(ResourceScope scopeType)
+        [DataRow(ResourceTypeGenerationFlags.None)]
+        [DataRow(ResourceTypeGenerationFlags.ExistingResource)]
+        [DataRow(ResourceTypeGenerationFlags.PermitLiteralNameProperty)]
+        [DataRow(ResourceTypeGenerationFlags.ExistingResource | ResourceTypeGenerationFlags.PermitLiteralNameProperty)]
+        public void AzResourceTypeProvider_can_deserialize_all_types_without_throwing(ResourceTypeGenerationFlags flags)
         {
             var resourceTypeProvider = new AzResourceTypeProvider();
-            var availableTypes = resourceTypeProvider.GetAvailableTypes(scopeType);
+            var availableTypes = resourceTypeProvider.GetAvailableTypes();
 
             // sanity check - we know there should be a lot of types available
-            var expectedTypeCount = scopeType == ResourceScope.ResourceGroup ? 2000 : 100;
+            var expectedTypeCount = 3000;
             availableTypes.Should().HaveCountGreaterThan(expectedTypeCount);
 
             foreach (var availableType in availableTypes)
             {
-                resourceTypeProvider.HasType(scopeType, availableType).Should().BeTrue();
-                var knownResourceType = resourceTypeProvider.GetType(scopeType, availableType);
+                resourceTypeProvider.HasType(availableType).Should().BeTrue();
+                var resourceType = resourceTypeProvider.GetType(availableType, flags);
 
                 try
                 {
                     var visited = new HashSet<TypeSymbol>();
-                    VisitAllReachableTypes(knownResourceType, visited);
+                    VisitAllReachableTypes(resourceType, visited);
                 }
                 catch (Exception exception)
                 {
@@ -53,19 +53,15 @@ namespace Bicep.Core.UnitTests.TypeSystem.Az
             }
         }
 
-        [DataTestMethod]
-        [DataRow(ResourceScope.Tenant)]
-        [DataRow(ResourceScope.ManagementGroup)]
-        [DataRow(ResourceScope.Subscription)]
-        [DataRow(ResourceScope.ResourceGroup)]
-        public void AzResourceTypeProvider_can_list_all_types_without_throwing(ResourceScope scopeType)
+        [TestMethod]
+        public void AzResourceTypeProvider_can_list_all_types_without_throwing()
         
         {
             var resourceTypeProvider = new AzResourceTypeProvider();
-            var availableTypes = resourceTypeProvider.GetAvailableTypes(scopeType);
+            var availableTypes = resourceTypeProvider.GetAvailableTypes();
 
             // sanity check - we know there should be a lot of types available
-            var expectedTypeCount = scopeType == ResourceScope.ResourceGroup ? 2000 : 100;
+            var expectedTypeCount = 3000;
             availableTypes.Should().HaveCountGreaterThan(expectedTypeCount);
         }
 
@@ -75,7 +71,7 @@ namespace Bicep.Core.UnitTests.TypeSystem.Az
             
             var typeLoader = CreateMockTypeLoader(ResourceTypeReference.Parse("Mock.Rp/mockType@2020-01-01"));
             Compilation createCompilation(string program)
-                => new Compilation(new AzResourceTypeProvider(typeLoader), SyntaxFactory.CreateFromText(program));
+                => new Compilation(new AzResourceTypeProvider(typeLoader), SyntaxTreeGroupingFactory.CreateFromText(program));
 
             // Missing top-level properties - should be an error
             var compilation = createCompilation(@"
@@ -93,7 +89,7 @@ resource missingResource 'Mock.Rp/madeUpResourceType@2020-01-01' = {
         {
             var typeLoader = CreateMockTypeLoader(ResourceTypeReference.Parse("Mock.Rp/mockType@2020-01-01"));
             Compilation createCompilation(string program)
-                => new Compilation(new AzResourceTypeProvider(typeLoader), SyntaxFactory.CreateFromText(program));
+                => new Compilation(new AzResourceTypeProvider(typeLoader), SyntaxTreeGroupingFactory.CreateFromText(program));
 
             // Missing top-level properties - should be an error
             var compilation = createCompilation(@"
@@ -116,7 +112,7 @@ resource unexpectedTopLevel 'Mock.Rp/mockType@2020-01-01' = {
 }
 ");
             compilation.Should().HaveDiagnostics(new [] {
-                ("BCP037", DiagnosticLevel.Error, "No other properties are allowed on objects of type \"Mock.Rp/mockType@2020-01-01\"."),
+                ("BCP038", DiagnosticLevel.Error, "The property \"madeUpProperty\" is not allowed on objects of type \"Mock.Rp/mockType@2020-01-01\". Permissible properties include \"dependsOn\"."),
             });
 
             // Missing non top-level properties - should be a warning
@@ -214,12 +210,7 @@ resource unexpectedPropertiesProperty 'Mock.Rp/mockType@2020-01-01' = {
             {
                 [resourceTypeReference.FormatName()] = mockTypeLocation,
             };
-            mockTypeLoader.Setup(x => x.GetIndexedTypes()).Returns(new Azure.Bicep.Types.Az.Index.IndexedTypes(
-                resourceTypes,
-                resourceTypes,
-                resourceTypes,
-                resourceTypes,
-                resourceTypes));
+            mockTypeLoader.Setup(x => x.GetIndexedTypes()).Returns(new Azure.Bicep.Types.Az.Index.TypeIndex(resourceTypes));
             mockTypeLoader.Setup(x => x.LoadResourceType(mockTypeLocation)).Returns(resourceType);
 
             return mockTypeLoader.Object;

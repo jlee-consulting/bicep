@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 using System.Collections.Generic;
@@ -45,13 +45,13 @@ namespace Bicep.LangServer.IntegrationTests
                 .ToLookup(pair => pair.Value, pair => pair.Key);
 
             var validVariableAccessPairs = symbolTable
-                .Where(pair => (pair.Key is VariableAccessSyntax || pair.Key is INamedDeclarationSyntax)
+                .Where(pair => (pair.Key is VariableAccessSyntax || pair.Key is ResourceAccessSyntax || pair.Key is ITopLevelNamedDeclarationSyntax)
                                && pair.Value.Kind != SymbolKind.Error
                                && pair.Value.Kind != SymbolKind.Function
                                && pair.Value.Kind != SymbolKind.Namespace
                                // symbols whose identifiers have parse errors will have a name like <error> or <missing>
                                && pair.Value.Name.Contains("<") == false);
-
+            
             const string expectedNewText = "NewIdentifier";
             foreach (var (syntax, symbol) in validVariableAccessPairs)
             {
@@ -111,7 +111,7 @@ namespace Bicep.LangServer.IntegrationTests
         public async Task RenamingNonSymbolsShouldProduceEmptyEdit(DataSet dataSet)
         {
             // local function
-            bool IsWrongNode(SyntaxBase node) => !(node is ISymbolReference) && !(node is INamedDeclarationSyntax) && !(node is Token);
+            bool IsWrongNode(SyntaxBase node) => !(node is ISymbolReference) && !(node is ITopLevelNamedDeclarationSyntax) && !(node is Token);
 
             var uri = DocumentUri.From($"/{dataSet.Name}");
 
@@ -156,7 +156,7 @@ namespace Bicep.LangServer.IntegrationTests
 
         private static IEnumerable<object[]> GetData()
         {
-            return DataSets.AllDataSets.ToDynamicTestData();
+            return DataSets.NonStressDataSets.ToDynamicTestData();
         }
     }
 }

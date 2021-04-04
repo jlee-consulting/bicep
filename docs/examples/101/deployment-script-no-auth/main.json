@@ -1,6 +1,13 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "dev",
+      "templateHash": "7339630272781107180"
+    }
+  },
   "parameters": {
     "location": {
       "type": "string",
@@ -20,12 +27,12 @@
     {
       "type": "Microsoft.Resources/deploymentScripts",
       "apiVersion": "2020-10-01",
-      "kind": "AzurePowerShell",
       "name": "[parameters('dsName')]",
+      "kind": "AzurePowerShell",
       "location": "[parameters('location')]",
       "properties": {
         "azPowerShellVersion": "3.0",
-        "scriptContent": "$DeploymentScriptOutputs[\"test\"] = \"test this output\"",
+        "scriptContent": "$DeploymentScriptOutputs[\"test\"] = \"test this output\"\n",
         "forceUpdateTag": "[parameters('timestamp')]",
         "retentionInterval": "PT4H"
       }
