@@ -25,7 +25,7 @@ describe("hover", (): void => {
   });
 
   afterAll(async () => {
-    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+    await vscode.commands.executeCommand("workbench.action.closeAllEditor");
   });
 
   it("should reveal type signature when hovering over a parameter name", async () => {
@@ -126,13 +126,8 @@ describe("hover", (): void => {
     expectDefined(hovers);
     expect(hovers).toHaveLength(expectedHovers.length);
     hovers.forEach((hover, hoverIndex) => {
-      const {
-        startLine,
-        startCharacter,
-        endLine,
-        endCharacter,
-        contents,
-      } = expectedHovers[hoverIndex];
+      const { startLine, startCharacter, endLine, endCharacter, contents } =
+        expectedHovers[hoverIndex];
 
       expectDefined(hover.range);
       expectRange(
@@ -156,6 +151,6 @@ describe("hover", (): void => {
   }
 
   function marked(rawString: string): string {
-    return "```bicep\n" + rawString + "\n```";
+    return "```bicep\n" + rawString + "\n```\n";
   }
 });

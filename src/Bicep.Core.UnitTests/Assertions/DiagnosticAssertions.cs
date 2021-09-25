@@ -2,10 +2,8 @@
 // Licensed under the MIT License.
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Bicep.Core.Diagnostics;
-using Bicep.Core.Syntax;
-using Bicep.Core.UnitTests.Utils;
+using Bicep.Core.Workspaces;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using FluentAssertions.Formatting;
@@ -15,13 +13,13 @@ namespace Bicep.Core.UnitTests.Assertions
 {
     public static class DiagnosticExtensions 
     {
-        public static DiagnosticAssertions Should(this Diagnostic diagnostic)
+        public static DiagnosticAssertions Should(this IDiagnostic diagnostic)
         {
             return new DiagnosticAssertions(diagnostic); 
         }
     }
 
-    public class DiagnosticAssertions : ReferenceTypeAssertions<Diagnostic, DiagnosticAssertions>
+    public class DiagnosticAssertions : ReferenceTypeAssertions<IDiagnostic, DiagnosticAssertions>
     {
         private class DiagnosticFormatter : IValueFormatter
         {
@@ -30,12 +28,12 @@ namespace Bicep.Core.UnitTests.Assertions
                 return value is Diagnostic;
             }
 
-            public string Format(object value, FormattingContext context, FormatChild formatChild)
+            public void Format(object value, FormattedObjectGraph formattedGraph, FormattingContext context, FormatChild formatChild)
             {
                 var prefix = context.UseLineBreaks ? Environment.NewLine : string.Empty;
                 var diagnostic = (Diagnostic)value;
 
-                return $"{prefix}\"[{diagnostic.Code} ({diagnostic.Level})] {diagnostic.Message}\"";
+                formattedGraph.AddFragment($"{prefix}\"[{diagnostic.Code} ({diagnostic.Level})] {diagnostic.Message}\"");
             }
         }
 
@@ -44,16 +42,16 @@ namespace Bicep.Core.UnitTests.Assertions
             Formatter.AddFormatter(new DiagnosticFormatter());
         }
 
-        public DiagnosticAssertions(Diagnostic diagnostic)
+        public DiagnosticAssertions(IDiagnostic diagnostic)
             : base(diagnostic)
         {
         }
 
         protected override string Identifier => "Diagnostic";
 
-        public static void DoWithDiagnosticAnnotations(SyntaxTree syntaxTree, IEnumerable<Diagnostic> diagnostics, Action<IEnumerable<Diagnostic>> action)
+        public static void DoWithDiagnosticAnnotations(BicepFile bicepFile, IEnumerable<IDiagnostic> diagnostics, Action<IEnumerable<IDiagnostic>> action)
         {
-            using (new AssertionScope().WithVisualDiagnostics(syntaxTree, diagnostics))
+            using (new AssertionScope().WithVisualDiagnostics(bicepFile, diagnostics))
             {
                 action(diagnostics);
             }
@@ -81,6 +79,17 @@ namespace Bicep.Core.UnitTests.Assertions
                 .Given<string>(() => Subject.Message)
                 .ForCondition(x => x == message)
                 .FailWith("Expected message to be {0}{reason} but it was {1}", _ => message, x => x);
+
+            return new AndConstraint<DiagnosticAssertions>(this);
+        }
+
+        public AndConstraint<DiagnosticAssertions> HaveMessageStartWith(string prefix, string because = "", params object[] becauseArgs)
+        {
+            Execute.Assertion
+                .BecauseOf(because, becauseArgs)
+                .Given<string>(() => Subject.Message)
+                .ForCondition(x => x.StartsWith(prefix))
+                .FailWith("Expected message to start with {0}{reason} but it was {1}", _ => prefix, x => x);
 
             return new AndConstraint<DiagnosticAssertions>(this);
         }

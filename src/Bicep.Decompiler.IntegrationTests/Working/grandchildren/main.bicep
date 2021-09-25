@@ -7,6 +7,7 @@ resource storageAccounts_ll21w7onmmpv65q24_name_resource 'Microsoft.Storage/stor
   sku: {
     name: 'Standard_LRS'
     tier: 'Standard'
+//@[4:8) [BCP073 (Warning)] The property "tier" is read-only. Expressions cannot be assigned to read-only properties. (CodeDescription: none) |tier|
   }
   kind: 'StorageV2'
   properties: {
@@ -40,6 +41,7 @@ resource storageAccounts_ll22w7onmmpv65q24_name_resource 'Microsoft.Storage/stor
   sku: {
     name: 'Standard_LRS'
     tier: 'Standard'
+//@[4:8) [BCP073 (Warning)] The property "tier" is read-only. Expressions cannot be assigned to read-only properties. (CodeDescription: none) |tier|
   }
   kind: 'StorageV2'
   properties: {
@@ -68,7 +70,8 @@ resource storageAccounts_ll22w7onmmpv65q24_name_resource 'Microsoft.Storage/stor
 }
 
 resource storageAccounts_ll21w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/blobServices@2021-01-01' = {
-  name: '${storageAccounts_ll21w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll21w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     cors: {
       corsRules: []
@@ -80,7 +83,8 @@ resource storageAccounts_ll21w7onmmpv65q24_name_default 'Microsoft.Storage/stora
 }
 
 resource storageAccounts_ll22w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/blobServices@2021-01-01' = {
-  name: '${storageAccounts_ll22w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll22w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     cors: {
       corsRules: []
@@ -92,7 +96,8 @@ resource storageAccounts_ll22w7onmmpv65q24_name_default 'Microsoft.Storage/stora
 }
 
 resource Microsoft_Storage_storageAccounts_fileServices_storageAccounts_ll21w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/fileServices@2021-01-01' = {
-  name: '${storageAccounts_ll21w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll21w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     protocolSettings: {
       smb: {}
@@ -108,7 +113,8 @@ resource Microsoft_Storage_storageAccounts_fileServices_storageAccounts_ll21w7on
 }
 
 resource Microsoft_Storage_storageAccounts_fileServices_storageAccounts_ll22w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/fileServices@2021-01-01' = {
-  name: '${storageAccounts_ll22w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll22w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     protocolSettings: {
       smb: {}
@@ -124,7 +130,8 @@ resource Microsoft_Storage_storageAccounts_fileServices_storageAccounts_ll22w7on
 }
 
 resource Microsoft_Storage_storageAccounts_queueServices_storageAccounts_ll21w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/queueServices@2021-01-01' = {
-  name: '${storageAccounts_ll21w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll21w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     cors: {
       corsRules: []
@@ -133,7 +140,8 @@ resource Microsoft_Storage_storageAccounts_queueServices_storageAccounts_ll21w7o
 }
 
 resource Microsoft_Storage_storageAccounts_queueServices_storageAccounts_ll22w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/queueServices@2021-01-01' = {
-  name: '${storageAccounts_ll22w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll22w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     cors: {
       corsRules: []
@@ -142,7 +150,8 @@ resource Microsoft_Storage_storageAccounts_queueServices_storageAccounts_ll22w7o
 }
 
 resource Microsoft_Storage_storageAccounts_tableServices_storageAccounts_ll21w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/tableServices@2021-01-01' = {
-  name: '${storageAccounts_ll21w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll21w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     cors: {
       corsRules: []
@@ -151,7 +160,8 @@ resource Microsoft_Storage_storageAccounts_tableServices_storageAccounts_ll21w7o
 }
 
 resource Microsoft_Storage_storageAccounts_tableServices_storageAccounts_ll22w7onmmpv65q24_name_default 'Microsoft.Storage/storageAccounts/tableServices@2021-01-01' = {
-  name: '${storageAccounts_ll22w7onmmpv65q24_name_resource.name}/default'
+  parent: storageAccounts_ll22w7onmmpv65q24_name_resource
+  name: 'default'
   properties: {
     cors: {
       corsRules: []
@@ -160,7 +170,8 @@ resource Microsoft_Storage_storageAccounts_tableServices_storageAccounts_ll22w7o
 }
 
 resource storageAccounts_ll21w7onmmpv65q24_name_default_blobs11 'Microsoft.Storage/storageAccounts/blobServices/containers@2021-01-01' = {
-  name: '${storageAccounts_ll21w7onmmpv65q24_name_default.name}/blobs11'
+  parent: storageAccounts_ll21w7onmmpv65q24_name_default
+  name: 'blobs11'
   properties: {
     defaultEncryptionScope: '$account-encryption-key'
     denyEncryptionScopeOverride: false
@@ -172,7 +183,8 @@ resource storageAccounts_ll21w7onmmpv65q24_name_default_blobs11 'Microsoft.Stora
 }
 
 resource storageAccounts_ll21w7onmmpv65q24_name_default_blobs12 'Microsoft.Storage/storageAccounts/blobServices/containers@2021-01-01' = {
-  name: '${storageAccounts_ll21w7onmmpv65q24_name_default.name}/blobs12'
+  parent: storageAccounts_ll21w7onmmpv65q24_name_default
+  name: 'blobs12'
   properties: {
     defaultEncryptionScope: '$account-encryption-key'
     denyEncryptionScopeOverride: false
@@ -184,7 +196,8 @@ resource storageAccounts_ll21w7onmmpv65q24_name_default_blobs12 'Microsoft.Stora
 }
 
 resource storageAccounts_ll22w7onmmpv65q24_name_default_blobs21 'Microsoft.Storage/storageAccounts/blobServices/containers@2021-01-01' = {
-  name: '${storageAccounts_ll22w7onmmpv65q24_name_default.name}/blobs21'
+  parent: storageAccounts_ll22w7onmmpv65q24_name_default
+  name: 'blobs21'
   properties: {
     defaultEncryptionScope: '$account-encryption-key'
     denyEncryptionScopeOverride: false
@@ -196,7 +209,8 @@ resource storageAccounts_ll22w7onmmpv65q24_name_default_blobs21 'Microsoft.Stora
 }
 
 resource storageAccounts_ll22w7onmmpv65q24_name_default_blobs22 'Microsoft.Storage/storageAccounts/blobServices/containers@2021-01-01' = {
-  name: '${storageAccounts_ll22w7onmmpv65q24_name_default.name}/blobs22'
+  parent: storageAccounts_ll22w7onmmpv65q24_name_default
+  name: 'blobs22'
   properties: {
     defaultEncryptionScope: '$account-encryption-key'
     denyEncryptionScopeOverride: false

@@ -1,5 +1,8 @@
+// $1 = redisCache
+// $2 = 'name'
+
 resource redisCache 'Microsoft.Cache/Redis@2019-07-01' = {
-  name: 'testRedisCache'
+  name: 'name'
   location: resourceGroup().location
   properties: {
     sku: {
@@ -9,3 +12,5 @@ resource redisCache 'Microsoft.Cache/Redis@2019-07-01' = {
     }
   }
 }
+// Insert snippet here
+

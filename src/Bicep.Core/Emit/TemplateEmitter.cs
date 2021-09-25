@@ -14,21 +14,18 @@ namespace Bicep.Core.Emit
     {
         private readonly SemanticModel model;
 
+        private readonly EmitterSettings settings;
+
+        public TemplateEmitter(SemanticModel model, EmitterSettings settings)
+        {
+            this.model = model;
+            this.settings = settings;
+        }
+
         /// <summary>
         /// The JSON spec requires UTF8 without a BOM, so we use this encoding to write JSON files.
         /// </summary>
-        private Encoding UTF8EncodingWithoutBom => new UTF8Encoding(false);
-
-        /// <summary>
-        /// Assembly File Version to emit into the metadata
-        /// </summary>
-        private readonly string assemblyFileVersion;
-
-        public TemplateEmitter(SemanticModel model, string assemblyFileVersion)
-        {
-            this.model = model;
-            this.assemblyFileVersion = assemblyFileVersion;
-        }
+        public static Encoding UTF8EncodingWithoutBom { get; } = new UTF8Encoding(false);
 
         /// <summary>
         /// Emits a template to the specified stream if there are no errors. No writes are made to the stream if there are compilation errors.
@@ -36,12 +33,12 @@ namespace Bicep.Core.Emit
         /// <param name="stream">The stream to write the template</param>
         public EmitResult Emit(Stream stream) => EmitOrFail(() =>
         {
-            using var writer = new JsonTextWriter(new StreamWriter(stream, UTF8EncodingWithoutBom, 4096, true))
+            using var writer = new JsonTextWriter(new StreamWriter(stream, UTF8EncodingWithoutBom, 4096, leaveOpen: true))
             {
                 Formatting = Formatting.Indented
             };
 
-            new TemplateWriter(this.model, this.assemblyFileVersion).Write(writer);
+            new TemplateWriter(this.model, this.settings).Write(writer);
         });
 
         /// <summary>
@@ -52,10 +49,13 @@ namespace Bicep.Core.Emit
         {
             using var writer = new JsonTextWriter(textWriter)
             {
+                // don't close the textWriter when writer is disposed
+                CloseOutput = false,
                 Formatting = Formatting.Indented
             };
 
-            new TemplateWriter(this.model, this.assemblyFileVersion).Write(writer);
+            new TemplateWriter(this.model, this.settings).Write(writer);
+            writer.Flush();
         });
 
         /// <summary>
@@ -64,7 +64,7 @@ namespace Bicep.Core.Emit
         /// <param name="writer">The json writer to write the template</param>
         public EmitResult Emit(JsonTextWriter writer) => this.EmitOrFail(() =>
         {
-            new TemplateWriter(this.model, this.assemblyFileVersion).Write(writer);
+            new TemplateWriter(this.model, this.settings).Write(writer);
         });
 
         private EmitResult EmitOrFail(Action write)

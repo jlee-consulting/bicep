@@ -1,10 +1,9 @@
 ﻿// Storage Account
-resource storageaccount 'Microsoft.Storage/storageAccounts@2021-02-01' = {
-  name: ${1:'storageaccount'}
+resource /*${1:storageaccount}*/storageaccount 'Microsoft.Storage/storageAccounts@2021-02-01' = {
+  name: /*${2:'name'}*/'name'
   location: resourceGroup().location
-  kind: '${2|StorageV2,Storage,BlobStorage,BlockBlobStorage,FileStorage|}'
+  kind: /*${3|'StorageV2','Storage','BlobStorage','BlockBlobStorage','FileStorage'|}*/'StorageV2'
   sku: {
-    name: ${3:'Premium_LRS'}
-    tier: '${4|Premium,Standard|}'
+    name: /*${4:'Premium_LRS'}*/'Premium_LRS'
   }
 }

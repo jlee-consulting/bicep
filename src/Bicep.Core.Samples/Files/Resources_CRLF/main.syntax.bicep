@@ -1,5 +1,23 @@
+
+//@[0:2) NewLine |\r\n|
+@sys.description('this is basicStorage')
+//@[0:225) ResourceDeclarationSyntax
+//@[0:40)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:40)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:39)    FunctionArgumentSyntax
+//@[17:39)     StringSyntax
+//@[17:39)      StringComplete |'this is basicStorage'|
+//@[39:40)    RightParen |)|
+//@[40:42)  NewLine |\r\n|
 resource basicStorage 'Microsoft.Storage/storageAccounts@2019-06-01' = {
-//@[0:183) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:21)  IdentifierSyntax
 //@[9:21)   Identifier |basicStorage|
@@ -56,8 +74,24 @@ resource basicStorage 'Microsoft.Storage/storageAccounts@2019-06-01' = {
 //@[0:1)   RightBrace |}|
 //@[1:5) NewLine |\r\n\r\n|
 
+@sys.description('this is dnsZone')
+//@[0:140) ResourceDeclarationSyntax
+//@[0:35)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:35)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:34)    FunctionArgumentSyntax
+//@[17:34)     StringSyntax
+//@[17:34)      StringComplete |'this is dnsZone'|
+//@[34:35)    RightParen |)|
+//@[35:37)  NewLine |\r\n|
 resource dnsZone 'Microsoft.Network/dnszones@2018-05-01' = {
-//@[0:103) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:16)  IdentifierSyntax
 //@[9:16)   Identifier |dnsZone|
@@ -1603,9 +1637,26 @@ param shouldDeployVm bool = true
 //@[26:27)   Assignment |=|
 //@[28:32)   BooleanLiteralSyntax
 //@[28:32)    TrueKeyword |true|
-//@[32:34) NewLine |\r\n|
+//@[32:36) NewLine |\r\n\r\n|
+
+@sys.description('this is vmWithCondition')
+//@[0:308) ResourceDeclarationSyntax
+//@[0:43)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:43)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:42)    FunctionArgumentSyntax
+//@[17:42)     StringSyntax
+//@[17:42)      StringComplete |'this is vmWithCondition'|
+//@[42:43)    RightParen |)|
+//@[43:45)  NewLine |\r\n|
 resource vmWithCondition 'Microsoft.Compute/virtualMachines@2020-06-01' = if (shouldDeployVm) {
-//@[0:263) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:24)  IdentifierSyntax
 //@[9:24)   Identifier |vmWithCondition|
@@ -1872,8 +1923,24 @@ resource extensionDependencies 'My.Rp/mockResource@2020-01-01' = {
 //@[0:1)   RightBrace |}|
 //@[1:5) NewLine |\r\n\r\n|
 
+@sys.description('this is existing1')
+//@[0:162) ResourceDeclarationSyntax
+//@[0:37)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:37)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:36)    FunctionArgumentSyntax
+//@[17:36)     StringSyntax
+//@[17:36)      StringComplete |'this is existing1'|
+//@[36:37)    RightParen |)|
+//@[37:39)  NewLine |\r\n|
 resource existing1 'Mock.Rp/existingExtensionResource@2020-01-01' existing = {
-//@[0:123) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:18)  IdentifierSyntax
 //@[9:18)   Identifier |existing1|
@@ -2037,8 +2104,24 @@ var storageAccounts = [
 
 // just a storage account loop
 //@[30:32) NewLine |\r\n|
+@sys.description('this is just a storage account loop')
+//@[0:284) ResourceDeclarationSyntax
+//@[0:55)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:55)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:54)    FunctionArgumentSyntax
+//@[17:54)     StringSyntax
+//@[17:54)      StringComplete |'this is just a storage account loop'|
+//@[54:55)    RightParen |)|
+//@[55:57)  NewLine |\r\n|
 resource storageResources 'Microsoft.Storage/storageAccounts@2019-06-01' = [for account in storageAccounts: {
-//@[0:227) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:25)  IdentifierSyntax
 //@[9:25)   Identifier |storageResources|
@@ -2119,8 +2202,24 @@ resource storageResources 'Microsoft.Storage/storageAccounts@2019-06-01' = [for 
 
 // storage account loop with index
 //@[34:36) NewLine |\r\n|
+@sys.description('this is just a storage account loop with index')
+//@[0:318) ResourceDeclarationSyntax
+//@[0:66)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:66)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:65)    FunctionArgumentSyntax
+//@[17:65)     StringSyntax
+//@[17:65)      StringComplete |'this is just a storage account loop with index'|
+//@[65:66)    RightParen |)|
+//@[66:68)  NewLine |\r\n|
 resource storageResourcesWithIndex 'Microsoft.Storage/storageAccounts@2019-06-01' = [for (account, i) in storageAccounts: {
-//@[0:250) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:34)  IdentifierSyntax
 //@[9:34)   Identifier |storageResourcesWithIndex|
@@ -2215,15 +2314,31 @@ resource storageResourcesWithIndex 'Microsoft.Storage/storageAccounts@2019-06-01
 
 // basic nested loop
 //@[20:22) NewLine |\r\n|
+@sys.description('this is just a basic nested loop')
+//@[0:399) ResourceDeclarationSyntax
+//@[0:52)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:52)   InstanceFunctionCallSyntax
+//@[1:4)    VariableAccessSyntax
+//@[1:4)     IdentifierSyntax
+//@[1:4)      Identifier |sys|
+//@[4:5)    Dot |.|
+//@[5:16)    IdentifierSyntax
+//@[5:16)     Identifier |description|
+//@[16:17)    LeftParen |(|
+//@[17:51)    FunctionArgumentSyntax
+//@[17:51)     StringSyntax
+//@[17:51)      StringComplete |'this is just a basic nested loop'|
+//@[51:52)    RightParen |)|
+//@[52:54)  NewLine |\r\n|
 resource vnet 'Microsoft.Network/virtualNetworks@2020-06-01' = [for i in range(0, 3): {
-//@[0:279) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:13)  IdentifierSyntax
 //@[9:13)   Identifier |vnet|
 //@[14:60)  StringSyntax
 //@[14:60)   StringComplete |'Microsoft.Network/virtualNetworks@2020-06-01'|
 //@[61:62)  Assignment |=|
-//@[63:279)  ForSyntax
+//@[63:345)  ForSyntax
 //@[63:64)   LeftSquare |[|
 //@[64:67)   Identifier |for|
 //@[68:69)   LocalVariableSyntax
@@ -2243,7 +2358,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2020-06-01' = [for i in range(0
 //@[82:83)      Integer |3|
 //@[83:84)    RightParen |)|
 //@[84:85)   Colon |:|
-//@[86:278)   ObjectSyntax
+//@[86:344)   ObjectSyntax
 //@[86:87)    LeftBrace |{|
 //@[87:89)    NewLine |\r\n|
   name: 'vnet-${i}'
@@ -2259,19 +2374,19 @@ resource vnet 'Microsoft.Network/virtualNetworks@2020-06-01' = [for i in range(0
 //@[17:19)      StringRightPiece |}'|
 //@[19:21)    NewLine |\r\n|
   properties: {
-//@[2:165)    ObjectPropertySyntax
+//@[2:231)    ObjectPropertySyntax
 //@[2:12)     IdentifierSyntax
 //@[2:12)      Identifier |properties|
 //@[12:13)     Colon |:|
-//@[14:165)     ObjectSyntax
+//@[14:231)     ObjectSyntax
 //@[14:15)      LeftBrace |{|
 //@[15:17)      NewLine |\r\n|
     subnets: [for j in range(0, 4): {
-//@[4:143)      ObjectPropertySyntax
+//@[4:209)      ObjectPropertySyntax
 //@[4:11)       IdentifierSyntax
 //@[4:11)        Identifier |subnets|
 //@[11:12)       Colon |:|
-//@[13:143)       ForSyntax
+//@[13:209)       ForSyntax
 //@[13:14)        LeftSquare |[|
 //@[14:17)        Identifier |for|
 //@[18:19)        LocalVariableSyntax
@@ -2291,11 +2406,15 @@ resource vnet 'Microsoft.Network/virtualNetworks@2020-06-01' = [for i in range(0
 //@[32:33)           Integer |4|
 //@[33:34)         RightParen |)|
 //@[34:35)        Colon |:|
-//@[36:142)        ObjectSyntax
+//@[36:208)        ObjectSyntax
 //@[36:37)         LeftBrace |{|
 //@[37:39)         NewLine |\r\n|
-      // #completionTest(0,1,2,3,4,5,6) -> subnetIdAndProperties
-//@[64:66)         NewLine |\r\n|
+      // #completionTest(0,1,2,3,4,5) -> subnetIdAndProperties
+//@[62:64)         NewLine |\r\n|
+     
+//@[5:7)         NewLine |\r\n|
+      // #completionTest(6) -> subnetIdAndPropertiesNoColon
+//@[59:61)         NewLine |\r\n|
       name: 'subnet-${i}-${j}'
 //@[6:30)         ObjectPropertySyntax
 //@[6:10)          IdentifierSyntax
@@ -3029,80 +3148,6 @@ resource p1_vnet 'Microsoft.Network/virtualNetworks@2020-06-01' = {
 //@[0:1)   RightBrace |}|
 //@[1:5) NewLine |\r\n\r\n|
 
-resource p2_vnet 'Microsoft.Network/virtualNetworks@2020-06-01' = {
-//@[0:227) ResourceDeclarationSyntax
-//@[0:8)  Identifier |resource|
-//@[9:16)  IdentifierSyntax
-//@[9:16)   Identifier |p2_vnet|
-//@[17:63)  StringSyntax
-//@[17:63)   StringComplete |'Microsoft.Network/virtualNetworks@2020-06-01'|
-//@[64:65)  Assignment |=|
-//@[66:227)  ObjectSyntax
-//@[66:67)   LeftBrace |{|
-//@[67:69)   NewLine |\r\n|
-  location: p1_vnet.location
-//@[2:28)   ObjectPropertySyntax
-//@[2:10)    IdentifierSyntax
-//@[2:10)     Identifier |location|
-//@[10:11)    Colon |:|
-//@[12:28)    PropertyAccessSyntax
-//@[12:19)     VariableAccessSyntax
-//@[12:19)      IdentifierSyntax
-//@[12:19)       Identifier |p1_vnet|
-//@[19:20)     Dot |.|
-//@[20:28)     IdentifierSyntax
-//@[20:28)      Identifier |location|
-//@[28:30)   NewLine |\r\n|
-  name: 'myVnet2'
-//@[2:17)   ObjectPropertySyntax
-//@[2:6)    IdentifierSyntax
-//@[2:6)     Identifier |name|
-//@[6:7)    Colon |:|
-//@[8:17)    StringSyntax
-//@[8:17)     StringComplete |'myVnet2'|
-//@[17:19)   NewLine |\r\n|
-  properties: {
-//@[2:106)   ObjectPropertySyntax
-//@[2:12)    IdentifierSyntax
-//@[2:12)     Identifier |properties|
-//@[12:13)    Colon |:|
-//@[14:106)    ObjectSyntax
-//@[14:15)     LeftBrace |{|
-//@[15:17)     NewLine |\r\n|
-    addressSpace: {
-//@[4:84)     ObjectPropertySyntax
-//@[4:16)      IdentifierSyntax
-//@[4:16)       Identifier |addressSpace|
-//@[16:17)      Colon |:|
-//@[18:84)      ObjectSyntax
-//@[18:19)       LeftBrace |{|
-//@[19:21)       NewLine |\r\n|
-      addressPrefixes: [
-//@[6:56)       ObjectPropertySyntax
-//@[6:21)        IdentifierSyntax
-//@[6:21)         Identifier |addressPrefixes|
-//@[21:22)        Colon |:|
-//@[23:56)        ArraySyntax
-//@[23:24)         LeftSquare |[|
-//@[24:26)         NewLine |\r\n|
-        '10.0.0.0/24'
-//@[8:21)         ArrayItemSyntax
-//@[8:21)          StringSyntax
-//@[8:21)           StringComplete |'10.0.0.0/24'|
-//@[21:23)         NewLine |\r\n|
-      ]
-//@[6:7)         RightSquare |]|
-//@[7:9)       NewLine |\r\n|
-    }
-//@[4:5)       RightBrace |}|
-//@[5:7)     NewLine |\r\n|
-  }
-//@[2:3)     RightBrace |}|
-//@[3:5)   NewLine |\r\n|
-}
-//@[0:1)   RightBrace |}|
-//@[1:5) NewLine |\r\n\r\n|
-
 resource p1_subnet1 'Microsoft.Network/virtualNetworks/subnets@2020-06-01' = {
 //@[0:175) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
@@ -3728,4 +3773,6 @@ output p4_res1childid string = p4_child1.id
 //@[40:41)   Dot |.|
 //@[41:43)   IdentifierSyntax
 //@[41:43)    Identifier |id|
-//@[43:43) EndOfFile ||
+//@[43:45) NewLine |\r\n|
+
+//@[0:0) EndOfFile ||

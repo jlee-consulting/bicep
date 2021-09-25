@@ -1,8 +1,13 @@
-resource ws 'Microsoft.DesktopVirtualization/workspaces@2019-12-10-preview' = {
-  name: 'testWorkSpace'
+// $1 = workSpace
+// $2 = 'name'
+// $3 = 'friendlyName'
+
+resource workSpace 'Microsoft.DesktopVirtualization/workspaces@2019-12-10-preview' = {
+  name: 'name'
   location: resourceGroup().location
   properties: {
-    friendlyName: 'testFriendlyName'
+    friendlyName: 'friendlyName'
   }
 }
+// Insert snippet here
 

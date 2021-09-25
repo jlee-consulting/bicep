@@ -1,25 +1,25 @@
 ﻿// Cosmos DB Database Account
-resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2021-03-15' = {
-  name: ${1:'cosmosDbAccount'}
+resource /*${1:cosmosDbAccount}*/cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2021-03-15' = {
+  name: /*${2:'name'}*/'name'
   location: resourceGroup().location
-  kind: '${2|GlobalDocumentDB,MongoDB,Parse|}'
+  kind: /*${3|'GlobalDocumentDB','MongoDB','Parse'|}*/'GlobalDocumentDB'
   properties: {
     consistencyPolicy: {
-      defaultConsistencyLevel: '${3|Eventual,Session,BoundedStaleness,Strong,ConsistentPrefix|}'
-      maxStalenessPrefix: ${4:1}
-      maxIntervalInSeconds: ${5:5}
+      defaultConsistencyLevel: /*${4|'Eventual','Session','BoundedStaleness','Strong','ConsistentPrefix'|}*/'Eventual'
+      maxStalenessPrefix: /*${5:1}*/1
+      maxIntervalInSeconds: /*${6:5}*/5
     }
     locations: [
       {
-        locationName: ${6:'location'}
-        failoverPriority: ${7:0}
+        locationName: /*${7:'location'}*/'location'
+        failoverPriority: /*${8:0}*/0
       }
     ]
     databaseAccountOfferType: 'Standard'
-    enableAutomaticFailover: ${8|true,false|}
+    enableAutomaticFailover: /*${9|true,false|}*/true
     capabilities: [
       {
-        name: '${9|EnableTable,EnableGremlin|}'
+        name: /*${10|'EnableTable','EnableGremlin'|}*/'EnableTable'
       }
     ]
   }

@@ -4,13 +4,18 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
+using Bicep.Core;
+using Bicep.Core.Configuration;
 using Bicep.Core.Extensions;
-using Bicep.Core.Syntax;
+using Bicep.Core.FileSystem;
+using Bicep.Core.Semantics;
 using Bicep.Core.Workspaces;
 using Bicep.LanguageServer.CompilationManager;
 using Bicep.LanguageServer.Extensions;
 using Bicep.LanguageServer.Providers;
+using Bicep.LanguageServer.Registry;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Document;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
@@ -24,31 +29,76 @@ namespace Bicep.LanguageServer
         private readonly IWorkspace workspace;
         private readonly ILanguageServerFacade server;
         private readonly ICompilationProvider provider;
+        private readonly IFileResolver fileResolver;
+        private readonly IModuleRestoreScheduler scheduler;
 
         // represents compilations of open bicep files
         private readonly ConcurrentDictionary<DocumentUri, CompilationContext> activeContexts = new ConcurrentDictionary<DocumentUri, CompilationContext>();
 
-        public BicepCompilationManager(ILanguageServerFacade server, ICompilationProvider provider, IWorkspace workspace)
+        public BicepCompilationManager(ILanguageServerFacade server, ICompilationProvider provider, IWorkspace workspace, IFileResolver fileResolver, IModuleRestoreScheduler scheduler)
         {
             this.server = server;
             this.provider = provider;
             this.workspace = workspace;
+            this.fileResolver = fileResolver;
+            this.scheduler = scheduler;
         }
 
-        public void UpsertCompilation(DocumentUri documentUri, int? version, string fileContents)
+        public void RefreshCompilation(DocumentUri documentUri, bool reloadBicepConfig = false)
         {
-            var newSyntaxTree = SyntaxTree.Create(documentUri.ToUri(), fileContents);
-            var firstChanges = workspace.UpsertSyntaxTrees(newSyntaxTree.AsEnumerable());
-            var secondChanges = UpdateCompilationInternal(documentUri, version);
-            
-            var addedTrees = firstChanges.added.Concat(secondChanges.added);
-            var removedTrees = firstChanges.removed.Concat(secondChanges.removed);
+            var compilationContext = this.GetCompilation(documentUri);
+
+            if (compilationContext is null)
+            {
+                // This check handles the scenario when bicepconfig.json was updated, but we
+                // couldn't find an entry for the documentUri in activeContexts.
+                // This can happen if bicepconfig.json file was previously invalid, in which case
+                // we wouldn't have upserted compilation. This is intentional as it's not possible to
+                // compute diagnostics till errors in bicepconfig.json are fixed.
+                // When errors are fixed in bicepconfig.json and file is saved, we'll get called into this
+                // method again. CompilationContext will be null. We'll get the souceFile from workspace and
+                // upsert compulation.
+                if (reloadBicepConfig &&
+                    workspace.TryGetSourceFile(documentUri.ToUri(), out ISourceFile? sourceFile) &&
+                    sourceFile is BicepFile)
+                {
+                    UpsertCompilationInternal(documentUri, null, sourceFile, reloadBicepConfig);
+                }
+                return;
+            }
+
+            // TODO: This may cause race condition if the user is modifying the file at the same time
+            // need to make a shallow copy so it counts as a different file even though all the content is identical
+            // this was the easiest way to force the compilation to be regenerated
+            var shallowCopy = new BicepFile(compilationContext.Compilation.SourceFileGrouping.EntryPoint);
+            UpsertCompilationInternal(documentUri, null, shallowCopy, reloadBicepConfig);
+        }
+
+        public void UpsertCompilation(DocumentUri documentUri, int? version, string fileContents, string? languageId = null)
+        {
+            if (this.ShouldUpsertCompilation(documentUri, languageId))
+            {
+                var newFile = SourceFileFactory.CreateSourceFile(documentUri.ToUri(), fileContents);
+                UpsertCompilationInternal(documentUri, version, newFile);
+            }
+        }
+
+        private void UpsertCompilationInternal(DocumentUri documentUri, int? version, ISourceFile newFile, bool reloadBicepConfig = false)
+        {
+            var (_, removedFiles) = workspace.UpsertSourceFile(newFile);
+
+            var modelLookup = new Dictionary<ISourceFile, ISemanticModel>();
+            if (newFile is BicepFile)
+            {
+                // Do not update compilation if it is an ARM template file, since it cannot be an entrypoint.
+                UpdateCompilationInternal(documentUri, version, modelLookup, removedFiles, reloadBicepConfig);
+            }
 
             foreach (var (entrypointUri, context) in activeContexts)
             {
-                if (removedTrees.Any(x => context.Compilation.SyntaxTreeGrouping.SyntaxTrees.Contains(x)))
+                if (removedFiles.Any(x => context.Compilation.SourceFileGrouping.SourceFiles.Contains(x)))
                 {
-                    UpdateCompilationInternal(entrypointUri, null);
+                    UpdateCompilationInternal(entrypointUri, null, modelLookup, removedFiles, reloadBicepConfig);
                 }
             }
         }
@@ -57,12 +107,12 @@ namespace Bicep.LanguageServer
         {
             // close and clear diagnostics for the file
             // if upsert failed to create a compilation due to a fatal error, we still need to clean up the diagnostics
-            CloseCompilationInternal(documentUri, 0, Enumerable.Empty<OmniSharp.Extensions.LanguageServer.Protocol.Models.Diagnostic>());
+            CloseCompilationInternal(documentUri, 0, Enumerable.Empty<Diagnostic>());
         }
 
         public void HandleFileChanges(IEnumerable<FileEvent> fileEvents)
         {
-            var removedTrees = new HashSet<SyntaxTree>();
+            var removedFiles = new HashSet<ISourceFile>();
             foreach (var change in fileEvents.Where(x => x.Type == FileChangeType.Changed || x.Type == FileChangeType.Deleted))
             {
                 if (activeContexts.ContainsKey(change.Uri))
@@ -72,26 +122,28 @@ namespace Bicep.LanguageServer
                     continue;
                 }
 
-                // We treat both updates and deletes as 'removes' to force the new SyntaxTree to be reloaded from disk
-                if (workspace.TryGetSyntaxTree(change.Uri.ToUri(), out var removedTree))
+                // We treat both updates and deletes as 'removes' to force the new SourceFile to be reloaded from disk
+                if (workspace.TryGetSourceFile(change.Uri.ToUri(), out var removedFile))
                 {
-                    removedTrees.Add(removedTree);
+                    removedFiles.Add(removedFile);
                 }
                 else if (change.Type == FileChangeType.Deleted)
                 {
                     // If we don't know definitively that we're deleting a file, we have to assume it's a directory; the file system watcher does not give us any information to differentiate reliably.
                     // We could possibly assume that if the path ends in '.bicep', we've got a file, but this would discount directories ending in '.bicep', however unlikely.
-                    var subdirRemovedTrees = workspace.GetSyntaxTreesForDirectory(change.Uri.ToUri());
-                    removedTrees.UnionWith(subdirRemovedTrees);
+                    var subdirRemovedFiles = workspace.GetSourceFilesForDirectory(change.Uri.ToUri());
+                    removedFiles.UnionWith(subdirRemovedFiles);
                 }
             }
 
-            workspace.RemoveSyntaxTrees(removedTrees);
+            workspace.RemoveSourceFiles(removedFiles);
+
+            var modelLookup = new Dictionary<ISourceFile, ISemanticModel>();
             foreach (var (entrypointUri, context) in activeContexts)
             {
-                if (removedTrees.Any(x => context.Compilation.SyntaxTreeGrouping.SyntaxTrees.Contains(x)))
+                if (removedFiles.Any(x => context.Compilation.SourceFileGrouping.SourceFiles.Contains(x)))
                 {
-                    UpdateCompilationInternal(entrypointUri, null);
+                    UpdateCompilationInternal(entrypointUri, null, modelLookup, removedFiles);
                 }
             }
         }
@@ -102,7 +154,16 @@ namespace Bicep.LanguageServer
             return context;
         }
 
-        private ImmutableArray<SyntaxTree> CloseCompilationInternal(DocumentUri documentUri, int? version, IEnumerable<Diagnostic> closingDiagnostics)
+        private bool ShouldUpsertCompilation(DocumentUri documentUri, string? languageId = null)
+        {
+            // We should only upsert compilation when languageId is bicep or the file is already tracked in workspace.
+            // When the file is in workspace but languageId is null, the file can be a bicep file or a JSON template
+            // being referenced as a bicep module.
+            return string.Equals(languageId, LanguageConstants.LanguageId, StringComparison.OrdinalIgnoreCase) ||
+                this.workspace.TryGetSourceFile(documentUri.ToUri(), out var _);
+        }
+
+        private ImmutableArray<ISourceFile> CloseCompilationInternal(DocumentUri documentUri, int? version, IEnumerable<Diagnostic> closingDiagnostics)
         {
             this.activeContexts.TryRemove(documentUri, out var removedContext);
 
@@ -110,30 +171,68 @@ namespace Bicep.LanguageServer
 
             if (removedContext == null)
             {
-                return ImmutableArray<SyntaxTree>.Empty;
+                return ImmutableArray<ISourceFile>.Empty;
             }
 
-            var closedSyntaxTrees = removedContext.Compilation.SyntaxTreeGrouping.SyntaxTrees.ToHashSet();
-            foreach (var (entrypointUri, context) in activeContexts)
+            var closedFiles = removedContext.Compilation.SourceFileGrouping.SourceFiles.ToHashSet();
+            foreach (var (_, context) in activeContexts)
             {
-                closedSyntaxTrees.ExceptWith(context.Compilation.SyntaxTreeGrouping.SyntaxTrees);
+                closedFiles.ExceptWith(context.Compilation.SourceFileGrouping.SourceFiles);
             }
 
-            workspace.RemoveSyntaxTrees(closedSyntaxTrees);
+            workspace.RemoveSourceFiles(closedFiles);
 
-            return closedSyntaxTrees.ToImmutableArray();
+            return closedFiles.ToImmutableArray();
         }
 
-        private (ImmutableArray<SyntaxTree> added, ImmutableArray<SyntaxTree> removed) UpdateCompilationInternal(DocumentUri documentUri, int? version)
+        private (ImmutableArray<ISourceFile> added, ImmutableArray<ISourceFile> removed) UpdateCompilationInternal(DocumentUri documentUri, int? version, IDictionary<ISourceFile, ISemanticModel> modelLookup, IEnumerable<ISourceFile> removedFiles, bool reloadBicepConfig = false)
         {
             try
             {
-                var context = this.provider.Create(workspace, documentUri);
+                var folderContainingSourceFile = Path.GetDirectoryName(documentUri.GetFileSystemPath());
+                var context = this.activeContexts.AddOrUpdate(
+                    documentUri,
+                    (documentUri) => this.provider.Create(workspace, documentUri, modelLookup.ToImmutableDictionary(), new ConfigHelper(folderContainingSourceFile, fileResolver)),
+                    (documentUri, prevContext) =>
+                    {
+                        var sourceDependencies = removedFiles
+                            .SelectMany(x => prevContext.Compilation.SourceFileGrouping.GetFilesDependingOn(x))
+                            .ToImmutableHashSet();
 
-                var output = workspace.UpsertSyntaxTrees(context.Compilation.SyntaxTreeGrouping.SyntaxTrees);
+                        // check for semantic models that we can safely reuse from the previous compilation
+                        foreach (var sourceFile in prevContext.Compilation.SourceFileGrouping.SourceFiles)
+                        {
+                            if (!modelLookup.ContainsKey(sourceFile) && !sourceDependencies.Contains(sourceFile))
+                            {
+                                // if we have a file with no dependencies on the modified file(s), we can reuse the previous model
+                                modelLookup[sourceFile] = prevContext.Compilation.GetSemanticModel(sourceFile);
+                            }
+                        }
 
-                // there shouldn't be concurrent upsert requests (famous last words...), so a simple overwrite should be sufficient
-                this.activeContexts[documentUri] = context;
+                        ConfigHelper configHelper;
+
+                        if (reloadBicepConfig)
+                        {
+                            configHelper = new ConfigHelper(folderContainingSourceFile, fileResolver);
+                        }
+                        else
+                        {
+                            configHelper = prevContext.Compilation.ConfigHelper;
+                        }
+
+                        return this.provider.Create(workspace, documentUri, modelLookup.ToImmutableDictionary(), configHelper);
+                    });
+
+                foreach (var sourceFile in context.Compilation.SourceFileGrouping.SourceFiles)
+                {
+                    // store all the updated models as other compilations may be able to reuse them
+                    modelLookup[sourceFile] = context.Compilation.GetSemanticModel(sourceFile);
+                }
+
+                // this completes immediately
+                this.scheduler.RequestModuleRestore(this, documentUri, context.Compilation.SourceFileGrouping.ModulesToRestore);
+
+                var output = workspace.UpsertSourceFiles(context.Compilation.SourceFileGrouping.SourceFiles);
 
                 // convert all the diagnostics to LSP diagnostics
                 var diagnostics = GetDiagnosticsFromContext(context).ToDiagnostics(context.LineStarts);
@@ -149,7 +248,7 @@ namespace Bicep.LanguageServer
 
                 // publish a single fatal error diagnostic to tell the user something horrible has occurred
                 // TODO: Tell user how to create an issue on GitHub.
-                var fatalError = new OmniSharp.Extensions.LanguageServer.Protocol.Models.Diagnostic
+                var fatalError = new Diagnostic
                 {
                     Range = new Range
                     {
@@ -160,25 +259,22 @@ namespace Bicep.LanguageServer
                     Message = exception.Message,
                     Code = new DiagnosticCode("Fatal")
                 };
-                
-                // the file is no longer in a state that can be parsed
-                // clear all info to prevent cascading failures elsewhere
-                var closedTrees = CloseCompilationInternal(documentUri, version, fatalError.AsEnumerable());
 
-                return (ImmutableArray<SyntaxTree>.Empty, closedTrees);
+                this.PublishDocumentDiagnostics(documentUri, version, fatalError.AsEnumerable());
+
+                return (ImmutableArray<ISourceFile>.Empty, ImmutableArray<ISourceFile>.Empty);
             }
         }
 
-        // TODO: Remove the lexer part when we stop it from emitting errors
-        private IEnumerable<Core.Diagnostics.Diagnostic> GetDiagnosticsFromContext(CompilationContext context) => context.Compilation.GetEntrypointSemanticModel().GetAllDiagnostics();
+        private IEnumerable<Core.Diagnostics.IDiagnostic> GetDiagnosticsFromContext(CompilationContext context) => context.Compilation.GetEntrypointSemanticModel().GetAllDiagnostics();
 
-        private void PublishDocumentDiagnostics(DocumentUri uri, int? version, IEnumerable<OmniSharp.Extensions.LanguageServer.Protocol.Models.Diagnostic> diagnostics)
+        private void PublishDocumentDiagnostics(DocumentUri uri, int? version, IEnumerable<Diagnostic> diagnostics)
         {
             server.TextDocument.PublishDiagnostics(new PublishDiagnosticsParams
             {
                 Uri = uri,
                 Version = version,
-                Diagnostics = new Container<OmniSharp.Extensions.LanguageServer.Protocol.Models.Diagnostic>(diagnostics)
+                Diagnostics = new Container<Diagnostic>(diagnostics)
             });
         }
     }

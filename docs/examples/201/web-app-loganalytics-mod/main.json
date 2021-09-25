@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "16635523466382666048"
+      "templateHash": "3831278900086936670"
     }
   },
   "parameters": {
@@ -18,7 +18,7 @@
   "resources": [
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "appServicePlanDeploy",
       "properties": {
         "expressionEvaluationOptions": {
@@ -37,7 +37,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "11726653625731348975"
+              "templateHash": "10741606016888264590"
             }
           },
           "parameters": {
@@ -88,7 +88,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "appServiceDeploy",
       "properties": {
         "expressionEvaluationOptions": {
@@ -100,10 +100,10 @@
             "value": "[parameters('appName')]"
           },
           "appServicePlanID": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appServicePlanDeploy'), '2019-10-01').outputs.appServicePlanID.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appServicePlanDeploy'), '2020-06-01').outputs.appServicePlanID.value]"
           },
           "APPINSIGHTS_INSTRUMENTATIONKEY": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsightsDeploy'), '2019-10-01').outputs.APPINSIGHTS_INSTRUMENTATIONKEY.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appInsightsDeploy'), '2020-06-01').outputs.APPINSIGHTS_INSTRUMENTATIONKEY.value]"
           }
         },
         "template": {
@@ -113,7 +113,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "11879679526796717362"
+              "templateHash": "11917327337287752626"
             }
           },
           "parameters": {
@@ -212,7 +212,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "appInsightsDeploy",
       "properties": {
         "expressionEvaluationOptions": {
@@ -224,7 +224,7 @@
             "value": "[parameters('appName')]"
           },
           "logAnalaticsWorkspaceResourceID": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'logAnalyticsWorkspaceDeploy'), '2019-10-01').outputs.logAnalaticsWorkspaceResourceID.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'logAnalyticsWorkspaceDeploy'), '2020-06-01').outputs.logAnalaticsWorkspaceResourceID.value]"
           }
         },
         "template": {
@@ -234,7 +234,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "8952477625281734700"
+              "templateHash": "15097235235814757526"
             }
           },
           "parameters": {
@@ -284,7 +284,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "logAnalyticsWorkspaceDeploy",
       "properties": {
         "expressionEvaluationOptions": {
@@ -303,7 +303,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "15135260870848174745"
+              "templateHash": "10127040548662503532"
             }
           },
           "parameters": {

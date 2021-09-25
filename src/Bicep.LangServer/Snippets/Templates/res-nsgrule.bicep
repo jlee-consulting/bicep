@@ -1,15 +1,15 @@
 ﻿// Network Security Group Rule
-resource networkSecurityGroupRuleName 'Microsoft.Network/networkSecurityGroups/securityRules@2019-11-01' = {
-  name: ${1:'networkSecurityGroupRuleName'}
+resource /*${1:networkSecurityGroupSecurityRule}*/networkSecurityGroupSecurityRule 'Microsoft.Network/networkSecurityGroups/securityRules@2019-11-01' = {
+  name: /*${2:'networkSecurityGroup/name'}*/'networkSecurityGroup/name'
   properties: {
-    description: ${2:'nsgRuleDescription'}
-    protocol: '${3|*,Ah,Esp,Icmp,Tcp,Udb|}'
-    sourcePortRange: ${4:'nsgRuleSourcePortRange'}
-    destinationPortRange: ${5:'nsgRuleDestinationPortRange'}
-    sourceAddressPrefix: ${6:'nsgRuleSourceAddressPrefix'}
-    destinationAddressPrefix: ${7:'nsgRuleDestinationAddressRange'}
-    access: '${8|Allow,Deny|}'
-    priority: ${9:100}
-    direction: '${10|Inbound,Outbound|}'
+    description: /*${3:'description'}*/'description'
+    protocol: /*${4|'*','Ah','Esp','Icmp','Tcp','Udb'|}*/'*'
+    sourcePortRange: /*${5:'sourcePortRange'}*/'sourcePortRange'
+    destinationPortRange: /*${6:'destinationPortRange'}*/'destinationPortRange'
+    sourceAddressPrefix: /*${7:'sourceAddressPrefix'}*/'sourceAddressPrefix'
+    destinationAddressPrefix: /*${8:'destinationAddressPrefix'}*/'destinationAddressPrefix'
+    access: /*${9|'Allow','Deny'|}*/'Allow'
+    priority: /*${10:100}*/100
+    direction: /*${11|'Inbound','Outbound'|}*/'Inbound'
   }
 }

@@ -1,9 +1,9 @@
 ﻿// Application Service Plan (Server Farm)
-resource appServicePlan 'Microsoft.Web/serverfarms@2020-12-01' = {
-  name: ${1:'appServicePlan'}
+resource /*${1:appServicePlan}*/appServicePlan 'Microsoft.Web/serverfarms@2020-12-01' = {
+  name: /*${2:'name'}*/'name'
   location: resourceGroup().location
   sku: {
-    name: 'F1'
-    capacity: 1
+    name: /*${3:'name'}*/'name'
+    capacity: /*${4:capacity}*/4
   }
 }

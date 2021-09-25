@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import * as highlight from 'highlight.js';
+import { Mode, Language, HLJSApi } from 'highlight.js';
 
 const bounded = (text: string) => `\\b${text}\\b`;
 const after = (regex: string) => `(?<=${regex})`;
@@ -43,7 +43,7 @@ const KEYWORDS = {
 
 const lineComment: Mode = {
   className: 'comment',
-  match: `//.*$`,
+  match: `//.*${before(`$`)}`,
 };
 
 const blockComment: Mode = {
@@ -116,17 +116,11 @@ const objectPropertyKeyIdentifier: Mode = {
 };
 
 const objectProperty: Mode = {
-  begin: `^${notBefore(`${ws}}`)}`,
-  end: `$`,
+  begin: `${after(`^`)}${notBefore(`${ws}}`)}`,
+  end: before(`$`),
   contains: withComments([
-    {
-      begin: after(`^${ws}`),
-      end: before(`${ws}:`),
-      contains: withComments([
-        stringLiteral,
-        objectPropertyKeyIdentifier,
-      ]),
-    },
+    objectPropertyKeyIdentifier,
+    stringLiteral,
     {
       begin: after(`:${ws}`),
       end: before(`${ws}$`),
@@ -174,7 +168,7 @@ expression.variants = [
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function(hljs: typeof highlight | undefined): Language {
+export default function(hljs?: HLJSApi): Language {
   return {
     aliases: ['bicep'],
     case_insensitive: true,

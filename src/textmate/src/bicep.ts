@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import * as tm from "@azure-tools/tmlanguage-generator";
+import * as tm from "tmlanguage-generator";
 import path from "path";
 import plist from "plist";
 
@@ -29,6 +29,7 @@ export type BicepScope =
   | "punctuation.definition.template-expression.end.bicep";
 
 const bounded = (text: string) => `\\b${text}\\b`;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const after = (regex: string) => `(?<=${regex})`;
 const notAfter = (regex: string) => `(?<!${regex})`;
 const before = (regex: string) => `(?=${regex})`;
@@ -64,7 +65,7 @@ const keywordExpression: MatchRule = {
 const lineComment: MatchRule = {
   key: "line-comment",
   scope: "comment.line.double-slash.bicep",
-  match: `//.*$`,
+  match: `//.*${before(`$`)}`,
 };
 
 const blockComment: BeginEndRule = {
@@ -159,22 +160,11 @@ const objectPropertyKeyIdentifier: MatchRule = {
 const objectProperty: BeginEndRule = {
   key: "object-property",
   scope: meta,
-  begin: `^${notBefore(`${ws}}`)}`,
-  end: `$`,
+  begin: `${after(`^`)}${notBefore(`${ws}}`)}`,
+  end: before(`$`),
   patterns: withComments([
-    {
-      key: "object-property-start",
-      scope: meta,
-      begin: `^(${ws})`,// wanted to use after(`^${ws}`)
-      beginCaptures: {
-        "1": comments
-      },
-      end: before(`${ws}:`),
-      patterns: withComments([
-        stringLiteral,
-        objectPropertyKeyIdentifier,
-      ]),
-    },
+    objectPropertyKeyIdentifier,
+    stringLiteral,
     {
       key: "object-property-end",
       scope: meta,

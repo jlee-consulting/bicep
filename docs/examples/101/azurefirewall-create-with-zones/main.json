@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "17671454004803647679"
+      "templateHash": "1241648137071561964"
     }
   },
   "parameters": {
@@ -84,7 +84,8 @@
       "type": "Microsoft.Network/azureFirewalls",
       "apiVersion": "2020-06-01",
       "name": "[parameters('firewallName')]",
-      "zones": "[if(equals(length(parameters('availabilityZones')), 0), json('null'), parameters('availabilityZones'))]",
+      "location": "[parameters('location')]",
+      "zones": "[if(equals(length(parameters('availabilityZones')), 0), null(), parameters('availabilityZones'))]",
       "properties": {
         "ipConfigurations": [
           {

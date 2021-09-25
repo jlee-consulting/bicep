@@ -8,18 +8,18 @@ using Bicep.LanguageServer.CompilationManager;
 using Bicep.LanguageServer.Utils;
 using MediatR;
 using OmniSharp.Extensions.LanguageServer.Protocol;
+using OmniSharp.Extensions.LanguageServer.Protocol.Client.Capabilities;
 using OmniSharp.Extensions.LanguageServer.Protocol.Document;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.Extensions.LanguageServer.Protocol.Server.Capabilities;
 
 namespace Bicep.LanguageServer.Handlers
 {
-    public class BicepTextDocumentSyncHandler : TextDocumentSyncHandler
+    public class BicepTextDocumentSyncHandler : TextDocumentSyncHandlerBase
     {
         private readonly ICompilationManager compilationManager;
 
         public BicepTextDocumentSyncHandler(ICompilationManager compilationManager)
-            : base(TextDocumentSyncKind.Full, GetSaveRegistrationOptions())
         {
             this.compilationManager = compilationManager;
         }
@@ -41,8 +41,8 @@ namespace Bicep.LanguageServer.Handlers
 
         public override Task<Unit> Handle(DidOpenTextDocumentParams request, CancellationToken cancellationToken)
         {
-            this.compilationManager.UpsertCompilation(request.TextDocument.Uri, request.TextDocument.Version, request.TextDocument.Text);
-            
+            this.compilationManager.UpsertCompilation(request.TextDocument.Uri, request.TextDocument.Version, request.TextDocument.Text, request.TextDocument.LanguageId);
+
             return Unit.Task;
         }
 
@@ -58,11 +58,10 @@ namespace Bicep.LanguageServer.Handlers
             return Unit.Task;
         }
 
-        private static TextDocumentSaveRegistrationOptions GetSaveRegistrationOptions()
-            => new TextDocumentSaveRegistrationOptions
-            {
-                DocumentSelector = DocumentSelectorFactory.Create(),
-                IncludeText = true,
-            };
+        protected override TextDocumentSyncRegistrationOptions CreateRegistrationOptions(SynchronizationCapability capability, ClientCapabilities clientCapabilities) => new()
+        {
+            Change = TextDocumentSyncKind.Full,
+            DocumentSelector = DocumentSelectorFactory.CreateForTextDocumentSync()
+        };
     }
 }

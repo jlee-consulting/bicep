@@ -1,5 +1,6 @@
-﻿// $1 = 'testContainerRegistry'
-// $2 = Classic
-// $3 = true
+﻿// $1 = containerRegistry
+// $2 = 'name'
+// $3 = 'Basic'
+// $4 = false
 
 // Insert snippet here

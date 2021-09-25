@@ -191,17 +191,17 @@ var oneArrayIndexCompletions = objectLiteralType.sixth[0][]
 var myFloat = 3.14
 //@[4:11) Variable myFloat. Type: error. Declaration start char: 0, length: 16
 
-// secure cannot be used as a varaible decorator
+// secure cannot be used as a variable decorator
 @sys.secure()
 var something = 1
 //@[4:13) Variable something. Type: int. Declaration start char: 0, length: 31
 
-// #completionTest(1) -> empty
+// #completionTest(1) -> sysAndDescription
 @
-// #completionTest(5) -> empty
+// #completionTest(5) -> description
 @sys.
 var anotherThing = true
-//@[4:16) Variable anotherThing. Type: bool. Declaration start char: 0, length: 62
+//@[4:16) Variable anotherThing. Type: bool. Declaration start char: 0, length: 68
 
 // invalid identifier character classes
 var ☕ = true
@@ -313,4 +313,28 @@ var loopExpression = union([for thing in stuff: 4], [for thing in stuff: true])
 @batchSize(1)
 var batchSizeMakesNoSenseHere = false
 //@[4:29) Variable batchSizeMakesNoSenseHere. Type: bool. Declaration start char: 0, length: 51
+
+
+//KeyVault Secret Reference
+resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+//@[9:11) Resource kv. Type: Microsoft.KeyVault/vaults@2019-09-01. Declaration start char: 0, length: 88
+  name: 'testkeyvault'
+}
+
+var keyVaultSecretVar = kv.getSecret('mySecret')
+//@[4:21) Variable keyVaultSecretVar. Type: string. Declaration start char: 0, length: 48
+var keyVaultSecretInterpolatedVar = '${kv.getSecret('mySecret')}'
+//@[4:33) Variable keyVaultSecretInterpolatedVar. Type: string. Declaration start char: 0, length: 65
+var keyVaultSecretObjectVar = {
+//@[4:27) Variable keyVaultSecretObjectVar. Type: object. Declaration start char: 0, length: 68
+  secret: kv.getSecret('mySecret')
+}
+var keyVaultSecretArrayVar = [
+//@[4:26) Variable keyVaultSecretArrayVar. Type: string[]. Declaration start char: 0, length: 59
+  kv.getSecret('mySecret')
+]
+var keyVaultSecretArrayInterpolatedVar = [
+//@[4:38) Variable keyVaultSecretArrayInterpolatedVar. Type: string[]. Declaration start char: 0, length: 76
+  '${kv.getSecret('mySecret')}'
+]
 

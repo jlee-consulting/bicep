@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Bicep.Core.Extensions;
@@ -10,25 +11,29 @@ namespace Bicep.Core.Syntax
     public static class ObjectSyntaxExtensions
     {
         /// <summary>
-        /// Converts a syntactically valid object syntax node to a hashset of property name strings. Will throw if you provide a node with duplicate properties.
+        /// Converts a syntactically valid object syntax node to a dictionary mapping property name strings to property syntax nodes. Returns the first property in the case of duplicate names.
         /// </summary>
         /// <param name="syntax">The object syntax node</param>
-        public static ImmutableHashSet<string> ToKnownPropertyNames(this ObjectSyntax syntax) => 
-            syntax.Properties.Select(p => p.TryGetKeyText()).ToImmutableHashSetExcludingNull(LanguageConstants.IdentifierComparer);
+        public static ImmutableDictionary<string, ObjectPropertySyntax> ToNamedPropertyDictionary(this ObjectSyntax syntax)
+        {
+            var dictionary = new Dictionary<string, ObjectPropertySyntax>(LanguageConstants.IdentifierComparer);
+            foreach (var property in syntax.Properties)
+            {
+                if (property.TryGetKeyText() is { } key && !dictionary.ContainsKey(key))
+                {
+                    dictionary[key] = property;
+                }
+            }
+
+            return dictionary.ToImmutableDictionary(LanguageConstants.IdentifierComparer);
+        }
 
         /// <summary>
-        /// Converts a syntactically valid object syntax node to a dictionary mapping property name strings to property value expressions. Will throw if you provide a node with duplicate properties.
+        /// Converts a syntactically valid object syntax node to a dictionary mapping property name strings to property syntax node values. Returns the first property value in the case of duplicate names.
         /// </summary>
         /// <param name="syntax">The object syntax node</param>
-        public static ImmutableDictionary<string, SyntaxBase> ToKnownPropertyValueDictionary(this ObjectSyntax syntax) =>
-            syntax.Properties.ToImmutableDictionaryExcludingNull(p => p.TryGetKeyText(), p => p.Value, LanguageConstants.IdentifierComparer);
-
-        /// <summary>
-        /// Converts a syntactically valid object syntax node to a dictionary mapping property name strings to property syntax nodes. Will throw if you provide a node with duplicate properties.
-        /// </summary>
-        /// <param name="syntax">The object syntax node</param>
-        public static ImmutableDictionary<string, ObjectPropertySyntax> ToNamedPropertyDictionary(this ObjectSyntax syntax) =>	
-            syntax.Properties.ToImmutableDictionaryExcludingNull(p => p.TryGetKeyText(), LanguageConstants.IdentifierComparer);
+        public static ImmutableDictionary<string, SyntaxBase> ToNamedPropertyValueDictionary(this ObjectSyntax syntax)
+            => ToNamedPropertyDictionary(syntax).ToImmutableDictionary(x => x.Key, x => x.Value.Value, LanguageConstants.IdentifierComparer);
 
         /// <summary>
         /// Returns the specified property by name on any valid or invalid object syntax node if there is exactly one property by that name.
@@ -61,6 +66,38 @@ namespace Bicep.Core.Syntax
             }
 
             return result;
+        }
+
+        public static ObjectPropertySyntax? SafeGetPropertyByNameRecursive(this ObjectSyntax syntax, IList<string> propertyAccesses)
+        {
+            var currentSyntax = syntax;
+            for (int i = 0; i < propertyAccesses.Count; i++)
+            {
+                if (currentSyntax.SafeGetPropertyByName(propertyAccesses[i]) is ObjectPropertySyntax propertySyntax)
+                {
+                    // we have found our last property access
+                    if (i == propertyAccesses.Count-1)
+                    {
+                        return propertySyntax;
+                    }
+                    // we have successfully gone one level deeper into the object
+                    else if (propertySyntax.Value is ObjectSyntax propertyObjectSyntax)
+                    {
+                        currentSyntax = propertyObjectSyntax;
+                    }
+                    // our path isn't fully traversed yet and we hit a terminal value (not an object)
+                    else
+                    {
+                        break;
+                    }
+                }
+                // we couldn't even find this property on the object
+                else
+                {
+                   break;
+                }
+            }
+            return null;
         }
 
         public static ObjectSyntax MergeProperty(this ObjectSyntax? syntax, string propertyName, string propertyValue) =>
@@ -115,5 +152,6 @@ namespace Bicep.Core.Syntax
                     ? mergedObject.MergeProperty(propertyName, property.Value)
                     : mergedObject);
         }
+
     }
 }

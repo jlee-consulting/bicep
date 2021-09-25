@@ -8,7 +8,6 @@ using Bicep.Core.Diagnostics;
 using Bicep.Core.Text;
 using Bicep.Core.Emit;
 using Bicep.Core.Semantics;
-using Bicep.Core.Syntax;
 using Bicep.Wasm.LanguageHelpers;
 using System.Linq;
 using Bicep.Core.TypeSystem;
@@ -17,6 +16,7 @@ using Bicep.Core.FileSystem;
 using Bicep.Core.Workspaces;
 using Bicep.Core.Extensions;
 using Bicep.Decompiler;
+using Bicep.Core.Registry;
 
 namespace Bicep.Wasm
 {
@@ -56,7 +56,9 @@ namespace Bicep.Wasm
 
             try
             {
-                var (entrypointUri, filesToSave) = TemplateDecompiler.DecompileFileWithModules(resourceTypeProvider, fileResolver, jsonUri);
+                var bicepUri = PathHelper.ChangeToBicepExtension(jsonUri);
+                var decompiler = new TemplateDecompiler(resourceTypeProvider, fileResolver, new EmptyModuleRegistryProvider());
+                var (entrypointUri, filesToSave) = decompiler.DecompileFileWithModules(jsonUri, bicepUri);
 
                 return new DecompileResult(filesToSave[entrypointUri], null);
             }
@@ -82,7 +84,7 @@ namespace Bicep.Wasm
         public object GetSemanticTokens(string content)
         {
             var compilation = GetCompilation(content);
-            var tokens = SemanticTokenVisitor.BuildSemanticTokens(compilation.SyntaxTreeGrouping.EntryPoint);
+            var tokens = SemanticTokenVisitor.BuildSemanticTokens(compilation.SourceFileGrouping.EntryPoint);
 
             var data = new List<int>();
             SemanticToken? prevToken = null;
@@ -118,7 +120,8 @@ namespace Bicep.Wasm
             {
                 var lineStarts = TextCoordinateConverter.GetLineStarts(content);
                 var compilation = GetCompilation(content);
-                var emitter = new TemplateEmitter(compilation.GetEntrypointSemanticModel(), ThisAssembly.AssemblyFileVersion);
+                var emitterSettings = new EmitterSettings(ThisAssembly.AssemblyFileVersion, enableSymbolicNames: false);
+                var emitter = new TemplateEmitter(compilation.GetEntrypointSemanticModel(), emitterSettings);
 
                 // memory stream is not ideal for frequent large allocations
                 using var stream = new MemoryStream();
@@ -144,12 +147,14 @@ namespace Bicep.Wasm
         {
             var fileUri = new Uri("inmemory:///main.bicep");
             var workspace = new Workspace();
-            var syntaxTree = SyntaxTree.Create(fileUri, fileContents);
-            workspace.UpsertSyntaxTrees(syntaxTree.AsEnumerable());
+            var sourceFile = SourceFileFactory.CreateSourceFile(fileUri, fileContents);
+            workspace.UpsertSourceFile(sourceFile);
 
-            var syntaxTreeGrouping = SyntaxTreeGroupingBuilder.Build(new FileResolver(), workspace, fileUri);
+            var fileResolver = new FileResolver();
+            var dispatcher = new ModuleDispatcher(new EmptyModuleRegistryProvider());
+            var sourceFileGrouping = SourceFileGroupingBuilder.Build(fileResolver, dispatcher, workspace, fileUri);
 
-            return new Compilation(resourceTypeProvider, syntaxTreeGrouping);
+            return new Compilation(resourceTypeProvider, sourceFileGrouping, null);
         }
 
         private static string ReadStreamToEnd(Stream stream)
@@ -158,7 +163,7 @@ namespace Bicep.Wasm
             return reader.ReadToEnd();
         }
 
-        private static object ToMonacoDiagnostic(Diagnostic diagnostic, IReadOnlyList<int> lineStarts)
+        private static object ToMonacoDiagnostic(IDiagnostic diagnostic, IReadOnlyList<int> lineStarts)
         {
             var (startLine, startChar) = TextCoordinateConverter.GetPosition(lineStarts, diagnostic.Span.Position);
             var (endLine, endChar) = TextCoordinateConverter.GetPosition(lineStarts, diagnostic.GetEndPosition());

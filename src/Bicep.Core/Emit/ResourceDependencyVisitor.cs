@@ -50,19 +50,20 @@ namespace Bicep.Core.Emit
 
         public override void VisitResourceDeclarationSyntax(ResourceDeclarationSyntax syntax)
         {
-            if (!(this.model.GetSymbolInfo(syntax) is ResourceSymbol resourceSymbol))
+            if (model.ResourceMetadata.TryLookup(syntax) is not {} resource)
             {
-                throw new InvalidOperationException("Unbound declaration");
+                // When invoked by BicepDeploymentGraphHandler, it's possible that the declaration is unbound.
+                return;
             }
 
             // Resource ancestors are always dependencies.
-            var ancestors = this.model.ResourceAncestors.GetAncestors(resourceSymbol);
+            var ancestors = this.model.ResourceAncestors.GetAncestors(resource);
 
             // save previous declaration as we may call this recursively
             var prevDeclaration = this.currentDeclaration;
 
-            this.currentDeclaration = resourceSymbol;
-            this.resourceDependencies[resourceSymbol] = new HashSet<ResourceDependency>(ancestors.Select(a => new ResourceDependency(a.Resource, a.IndexExpression)));
+            this.currentDeclaration = resource.Symbol;
+            this.resourceDependencies[resource.Symbol] = new HashSet<ResourceDependency>(ancestors.Select(a => new ResourceDependency(a.Resource.Symbol, a.IndexExpression)));
             base.VisitResourceDeclarationSyntax(syntax);
 
             // restore previous declaration
@@ -71,9 +72,9 @@ namespace Bicep.Core.Emit
 
         public override void VisitModuleDeclarationSyntax(ModuleDeclarationSyntax syntax)
         {
-            if (!(this.model.GetSymbolInfo(syntax) is ModuleSymbol moduleSymbol))
+            if (this.model.GetSymbolInfo(syntax) is not ModuleSymbol moduleSymbol)
             {
-                throw new InvalidOperationException("Unbound declaration");
+                return;
             }
 
             // save previous declaration as we may call this recursively
@@ -89,9 +90,9 @@ namespace Bicep.Core.Emit
 
         public override void VisitVariableDeclarationSyntax(VariableDeclarationSyntax syntax)
         {
-            if (!(this.model.GetSymbolInfo(syntax) is VariableSymbol variableSymbol))
+            if (this.model.GetSymbolInfo(syntax) is not VariableSymbol variableSymbol)
             {
-                throw new InvalidOperationException("Unbound declaration");
+                return;
             }
 
             // save previous declaration as we may call this recursively
@@ -204,7 +205,7 @@ namespace Bicep.Core.Emit
                 VariableSymbol variableSymbol => variableSymbol.DeclaringVariable.Value,
                 _ => throw new NotImplementedException($"Unexpected current declaration type '{this.currentDeclaration?.GetType().Name}'.")
             };
-            
+
             // using the resource/module body as the context to allow indexed depdnencies relying on the resource/module loop index to work as expected
             var inaccessibleLocals = dfa.GetInaccessibleLocalsAfterSyntaxMove(candidateIndexExpression, context);
             if(inaccessibleLocals.Any())

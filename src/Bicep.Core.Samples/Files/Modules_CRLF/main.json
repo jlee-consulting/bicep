@@ -5,13 +5,16 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "17288750734281943284"
+      "templateHash": "14280990391921927454"
     }
   },
   "parameters": {
     "deployTimeSuffix": {
       "type": "string",
-      "defaultValue": "[newGuid()]"
+      "defaultValue": "[newGuid()]",
+      "metadata": {
+        "description": "this is deployTimeSuffix param"
+      }
     }
   },
   "functions": [],
@@ -29,7 +32,29 @@
     "emptyArray": [],
     "duplicateAcrossScopes": "hello",
     "someDuplicate": true,
-    "otherDuplicate": false
+    "otherDuplicate": false,
+    "vaults": [
+      {
+        "vaultName": "test-1-kv",
+        "vaultRG": "test-1-rg",
+        "vaultSub": "abcd-efgh"
+      },
+      {
+        "vaultName": "test-2-kv",
+        "vaultRG": "test-2-rg",
+        "vaultSub": "ijkl-1adg1"
+      }
+    ],
+    "secrets": [
+      {
+        "name": "secret01",
+        "version": "versionA"
+      },
+      {
+        "name": "secret02",
+        "version": "versionB"
+      }
+    ]
   },
   "resources": [
     {
@@ -37,12 +62,14 @@
       "apiVersion": "2020-01-01",
       "name": "harry",
       "properties": {
-        "modADep": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2019-10-01').outputs.stringOutputA.value]",
-        "modBDep": "[reference(resourceId('Microsoft.Resources/deployments', 'modB'), '2019-10-01').outputs.myResourceId.value]"
+        "modADep": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2020-06-01').outputs.stringOutputA.value]",
+        "modBDep": "[reference(resourceId('Microsoft.Resources/deployments', 'modB'), '2020-06-01').outputs.myResourceId.value]",
+        "modCDep": "[reference(resourceId('Microsoft.Resources/deployments', 'modC'), '2020-06-01').outputs.myResourceId.value]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'modATest')]",
-        "[resourceId('Microsoft.Resources/deployments', 'modB')]"
+        "[resourceId('Microsoft.Resources/deployments', 'modB')]",
+        "[resourceId('Microsoft.Resources/deployments', 'modC')]"
       ]
     },
     {
@@ -50,7 +77,7 @@
       "apiVersion": "2020-01-01",
       "name": "[format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix'))]",
       "properties": {
-        "modADep": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix'))), '2019-10-01').outputs.outputObj.value]"
+        "modADep": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix'))), '2020-06-01').outputs.outputObj.value]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix')))]",
@@ -59,8 +86,11 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "modATest",
+      "metadata": {
+        "description": "this module a"
+      },
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -91,7 +121,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -150,8 +180,11 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "modB",
+      "metadata": {
+        "description": "this module b"
+      },
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -169,7 +202,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "5311387963487731512"
+              "templateHash": "2690166781482293239"
             }
           },
           "parameters": {
@@ -198,8 +231,11 @@
     {
       "condition": "[equals(add(1, 1), 2)]",
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "modBWithCondition",
+      "metadata": {
+        "description": "this is just module b with a condition"
+      },
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -217,7 +253,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "5311387963487731512"
+              "templateHash": "2690166781482293239"
             }
           },
           "parameters": {
@@ -245,7 +281,90 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
+      "name": "modC",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "West US"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "location": {
+              "type": "string"
+            }
+          },
+          "variables": {},
+          "functions": [],
+          "resources": [
+            {
+              "name": "myResource",
+              "type": "Mock.Rp/mockResource",
+              "apiVersion": "2020-01-01",
+              "location": "[parameters('location')]"
+            }
+          ],
+          "outputs": {
+            "myResourceId": {
+              "type": "string",
+              "value": "[resourceId('Mock.Rp/mockResource', 'myResource')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "condition": "[equals(sub(2, 1), 1)]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-06-01",
+      "name": "modCWithCondition",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "East US"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "location": {
+              "type": "string"
+            }
+          },
+          "variables": {},
+          "functions": [],
+          "resources": [
+            {
+              "name": "myResource",
+              "type": "Mock.Rp/mockResource",
+              "apiVersion": "2020-01-01",
+              "location": "[parameters('location')]"
+            }
+          ],
+          "outputs": {
+            "myResourceId": {
+              "type": "string",
+              "value": "[resourceId('Mock.Rp/mockResource', 'myResource')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-06-01",
       "name": "optionalWithNoParams1",
       "properties": {
         "expressionEvaluationOptions": {
@@ -259,7 +378,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12219545452385241730"
+              "templateHash": "10738077103160673326"
             }
           },
           "parameters": {
@@ -304,7 +423,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "optionalWithNoParams2",
       "properties": {
         "expressionEvaluationOptions": {
@@ -319,7 +438,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12219545452385241730"
+              "templateHash": "10738077103160673326"
             }
           },
           "parameters": {
@@ -364,7 +483,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "optionalWithNoParams3",
       "properties": {
         "expressionEvaluationOptions": {
@@ -392,7 +511,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12219545452385241730"
+              "templateHash": "10738077103160673326"
             }
           },
           "parameters": {
@@ -437,7 +556,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "optionalWithAllParamsAndManualDependency",
       "properties": {
         "expressionEvaluationOptions": {
@@ -465,7 +584,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12219545452385241730"
+              "templateHash": "10738077103160673326"
             }
           },
           "parameters": {
@@ -514,7 +633,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "optionalWithImplicitDependency",
       "properties": {
         "expressionEvaluationOptions": {
@@ -542,7 +661,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12219545452385241730"
+              "templateHash": "10738077103160673326"
             }
           },
           "parameters": {
@@ -591,7 +710,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix'))]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -619,7 +738,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12219545452385241730"
+              "templateHash": "10738077103160673326"
             }
           },
           "parameters": {
@@ -672,7 +791,7 @@
         "count": "[length(variables('myModules'))]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[variables('myModules')[copyIndex()].name]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -697,7 +816,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -760,7 +879,7 @@
         "count": "[length(variables('myModules'))]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[variables('myModules')[copyIndex()].name]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -790,7 +909,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -853,7 +972,7 @@
         "count": "[length(variables('myModules'))]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[variables('myModules')[copyIndex()].name]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -884,7 +1003,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -947,7 +1066,7 @@
         "count": "[length(variables('emptyArray'))]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[format('hello-{0}', variables('emptyArray')[copyIndex()])]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -981,7 +1100,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -1044,7 +1163,7 @@
         "count": "[length(createArray())]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[format('hello-{0}', createArray()[copyIndex()])]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1078,7 +1197,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -1141,7 +1260,7 @@
         "count": "[length(createArray())]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "[format('hello-{0}', createArray()[copyIndex()])]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1172,7 +1291,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -1231,7 +1350,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "propertyLoopInsideParameterValue",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1295,7 +1414,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -1354,7 +1473,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "propertyLoopInsideParameterValueWithIndexes",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1419,7 +1538,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -1482,7 +1601,7 @@
         "count": "[length(range(0, 1))]"
       },
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "propertyLoopInsideParameterValueInsideModuleLoop",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1546,7 +1665,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12608156742562425152"
+              "templateHash": "13267921988990488399"
             }
           },
           "parameters": {
@@ -1602,28 +1721,206 @@
           }
         }
       }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-06-01",
+      "name": "secureModule1",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "secureStringParam1": {
+            "reference": {
+              "keyVault": {
+                "id": "[resourceId('Microsoft.KeyVault/vaults', 'testkeyvault')]"
+              },
+              "secretName": "mySecret"
+            }
+          },
+          "secureStringParam2": {
+            "reference": {
+              "keyVault": {
+                "id": "[resourceId('Microsoft.KeyVault/vaults', 'testkeyvault')]"
+              },
+              "secretName": "mySecret",
+              "secretVersion": "secretVersion"
+            }
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "8835955120763275123"
+            }
+          },
+          "parameters": {
+            "secureStringParam1": {
+              "type": "secureString"
+            },
+            "secureStringParam2": {
+              "type": "secureString",
+              "defaultValue": ""
+            }
+          },
+          "functions": [],
+          "resources": [],
+          "outputs": {
+            "exposedSecureString": {
+              "type": "string",
+              "value": "[parameters('secureStringParam1')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-06-01",
+      "name": "secureModule2",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "secureStringParam1": {
+            "reference": {
+              "keyVault": {
+                "id": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'otherGroup'), 'Microsoft.KeyVault/vaults', 'testkeyvault')]"
+              },
+              "secretName": "mySecret"
+            }
+          },
+          "secureStringParam2": {
+            "reference": {
+              "keyVault": {
+                "id": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'otherGroup'), 'Microsoft.KeyVault/vaults', 'testkeyvault')]"
+              },
+              "secretName": "mySecret",
+              "secretVersion": "secretVersion"
+            }
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "8835955120763275123"
+            }
+          },
+          "parameters": {
+            "secureStringParam1": {
+              "type": "secureString"
+            },
+            "secureStringParam2": {
+              "type": "secureString",
+              "defaultValue": ""
+            }
+          },
+          "functions": [],
+          "resources": [],
+          "outputs": {
+            "exposedSecureString": {
+              "type": "string",
+              "value": "[parameters('secureStringParam1')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "copy": {
+        "name": "secureModuleLooped",
+        "count": "[length(variables('secrets'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-06-01",
+      "name": "[format('secureModuleLooped-{0}', copyIndex())]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "secureStringParam1": {
+            "reference": {
+              "keyVault": {
+                "id": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vaults')[copyIndex()].vaultSub, variables('vaults')[copyIndex()].vaultRG), 'Microsoft.KeyVault/vaults', variables('vaults')[copyIndex()].vaultName)]"
+              },
+              "secretName": "[variables('secrets')[copyIndex()].name]"
+            }
+          },
+          "secureStringParam2": {
+            "reference": {
+              "keyVault": {
+                "id": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vaults')[copyIndex()].vaultSub, variables('vaults')[copyIndex()].vaultRG), 'Microsoft.KeyVault/vaults', variables('vaults')[copyIndex()].vaultName)]"
+              },
+              "secretName": "[variables('secrets')[copyIndex()].name]",
+              "secretVersion": "[variables('secrets')[copyIndex()].version]"
+            }
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "dev",
+              "templateHash": "8835955120763275123"
+            }
+          },
+          "parameters": {
+            "secureStringParam1": {
+              "type": "secureString"
+            },
+            "secureStringParam2": {
+              "type": "secureString",
+              "defaultValue": ""
+            }
+          },
+          "functions": [],
+          "resources": [],
+          "outputs": {
+            "exposedSecureString": {
+              "type": "string",
+              "value": "[parameters('secureStringParam1')]"
+            }
+          }
+        }
+      }
     }
   ],
   "outputs": {
     "stringOutputA": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2019-10-01').outputs.stringOutputA.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2020-06-01').outputs.stringOutputA.value]"
     },
     "stringOutputB": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2019-10-01').outputs.stringOutputB.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2020-06-01').outputs.stringOutputB.value]"
     },
     "objOutput": {
       "type": "object",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2019-10-01').outputs.objOutput.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2020-06-01').outputs.objOutput.value]"
     },
     "arrayOutput": {
       "type": "array",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2019-10-01').outputs.arrayOutput.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'modATest'), '2020-06-01').outputs.arrayOutput.value]"
     },
     "modCalculatedNameOutput": {
       "type": "object",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix'))), '2019-10-01').outputs.outputObj.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}{1}', 'optionalWithAllParamsAndManualDependency', parameters('deployTimeSuffix'))), '2020-06-01').outputs.outputObj.value]"
     }
   }
 }

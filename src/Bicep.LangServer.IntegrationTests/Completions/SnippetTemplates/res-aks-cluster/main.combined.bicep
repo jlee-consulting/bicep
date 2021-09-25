@@ -1,12 +1,21 @@
+// $1 = aksCluster
+// $2 = 'name'
+// $3 = 1.19.7
+// $4 = 'dnsPrefix'
+// $5 = 3
+// $6 = 'Standard_DS2_v2'
+// $7 = 'adminUsername'
+// $8 = 'REQUIRED'
+
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2021-03-01' = {
-  name: 'aksCluster'
+  name: 'name'
   location: resourceGroup().location
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
     kubernetesVersion: '1.19.7'
-    dnsPrefix: 'testDnsPrefix'
+    dnsPrefix: 'dnsPrefix'
     enableRBAC: true
     agentPoolProfiles: [
       {
@@ -18,14 +27,16 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2021-03-01' = {
       }
     ]
     linuxProfile: {
-      adminUsername: 'testUser'
+      adminUsername: 'adminUsername'
       ssh: {
         publicKeys: [
           {
-            keyData: 'testKeyData'
+            keyData: 'REQUIRED'
           }
         ]
       }
     }
   }
 }
+// Insert snippet here
+

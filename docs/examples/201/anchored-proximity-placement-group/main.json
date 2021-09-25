@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "10107859720254818520"
+      "templateHash": "18364800079438522229"
     }
   },
   "parameters": {
@@ -54,7 +54,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "network",
       "properties": {
         "expressionEvaluationOptions": {
@@ -73,7 +73,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "9151756394915789577"
+              "templateHash": "6221020817843547137"
             }
           },
           "parameters": {
@@ -176,7 +176,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "anchor",
       "properties": {
         "expressionEvaluationOptions": {
@@ -191,7 +191,7 @@
             "value": "[resourceId('Microsoft.Compute/proximityPlacementGroups', 'Zone1')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2020-06-01').outputs.vnetId.value)]"
           },
           "vmName": {
             "value": "anchor"
@@ -207,7 +207,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "12612183363455163711"
+              "templateHash": "8156466852542605529"
             }
           },
           "parameters": {
@@ -345,7 +345,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "vm01",
       "properties": {
         "expressionEvaluationOptions": {
@@ -360,7 +360,7 @@
             "value": "[resourceId('Microsoft.Compute/availabilitySets', 'as1')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2020-06-01').outputs.vnetId.value)]"
           },
           "vmName": {
             "value": "vm01"
@@ -373,7 +373,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "266419871831429912"
+              "templateHash": "7325281056093512278"
             }
           },
           "parameters": {
@@ -479,7 +479,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "vm02",
       "properties": {
         "expressionEvaluationOptions": {
@@ -494,7 +494,7 @@
             "value": "[resourceId('Microsoft.Compute/availabilitySets', 'as1')]"
           },
           "subnetId": {
-            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2019-10-01').outputs.vnetId.value)]"
+            "value": "[format('{0}/subnets/Default', reference(resourceId('Microsoft.Resources/deployments', 'network'), '2020-06-01').outputs.vnetId.value)]"
           },
           "vmName": {
             "value": "vm02"
@@ -507,7 +507,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "266419871831429912"
+              "templateHash": "7325281056093512278"
             }
           },
           "parameters": {

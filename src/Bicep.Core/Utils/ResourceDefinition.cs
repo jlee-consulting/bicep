@@ -1,8 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using System;
 using System.Collections.Generic;
 using Bicep.Core.Semantics;
+using Bicep.Core.Semantics.Metadata;
 using Bicep.Core.Syntax;
 
 namespace Bicep.Core.Utils
@@ -10,15 +11,15 @@ namespace Bicep.Core.Utils
     internal class ResourceDefinition
     {
         public string ResourceName { get; }
-        public ResourceSymbol? ResourceScope { get; }
-        public string ResourceTypeFQDN { get; }
+        public ResourceMetadata? ResourceScope { get; }
+        public string FullyQualifiedResourceType { get; }
         public StringSyntax ResourceNamePropertyValue { get; }
 
-        public ResourceDefinition(string resourceName, ResourceSymbol? resourceScope, string resourceTypeFQDN, StringSyntax resourceNamePropertyValue)
+        public ResourceDefinition(string resourceName, ResourceMetadata? resourceScope, string fullyQualifiedResourceType, StringSyntax resourceNamePropertyValue)
         {
             ResourceName = resourceName;
             ResourceScope = resourceScope;
-            ResourceTypeFQDN = resourceTypeFQDN;
+            FullyQualifiedResourceType = fullyQualifiedResourceType;
             ResourceNamePropertyValue = resourceNamePropertyValue;
         }
 
@@ -32,7 +33,7 @@ namespace Bicep.Core.Utils
             public bool Equals(ResourceDefinition x, ResourceDefinition y)
             {
 
-                if (!string.Equals(x.ResourceTypeFQDN, y.ResourceTypeFQDN, StringComparison.InvariantCultureIgnoreCase))
+                if (!string.Equals(x.FullyQualifiedResourceType, y.FullyQualifiedResourceType, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
@@ -47,15 +48,15 @@ namespace Bicep.Core.Utils
 
                 //if literal value is null, we assume resources are not equal, as this indicates that interpolated value is used
                 //and as for now we're unable to determine if they will have equal values or not.
-                return xv is not null && yv is not null && string.Equals(xv, yv, StringComparison.InvariantCultureIgnoreCase);
+                return xv is not null && yv is not null && string.Equals(xv, yv, StringComparison.OrdinalIgnoreCase);
             }
 
             public int GetHashCode(ResourceDefinition obj)
             {
                 var hc = new HashCode();
-                hc.Add(obj.ResourceTypeFQDN, StringComparer.InvariantCultureIgnoreCase);
+                hc.Add(obj.FullyQualifiedResourceType, StringComparer.OrdinalIgnoreCase);
                 hc.Add(obj.ResourceScope);
-                hc.Add(obj.ResourceNamePropertyValue.TryGetLiteralValue(), StringComparer.InvariantCultureIgnoreCase);
+                hc.Add(obj.ResourceNamePropertyValue.TryGetLiteralValue(), StringComparer.OrdinalIgnoreCase);
                 return hc.ToHashCode();
             }
         }

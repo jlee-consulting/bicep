@@ -45,5 +45,11 @@ namespace Bicep.Core.UnitTests.Assertions
 
             return new AndConstraint<CompilationAssertions>(this);
         }
+        public AndConstraint<CompilationAssertions> NotHaveAnyDiagnostics(string because = "", params object[] becauseArgs)
+        {
+            Subject.GetEntrypointSemanticModel().GetAllDiagnostics().Should().BeEmpty(because, becauseArgs);
+
+            return new AndConstraint<CompilationAssertions>(this);
+        }
     }
 }

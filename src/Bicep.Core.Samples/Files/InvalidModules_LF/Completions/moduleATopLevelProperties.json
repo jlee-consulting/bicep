@@ -14,11 +14,8 @@
     "insertTextMode": "adjustIndentation",
     "textEdit": {
       "range": {},
-      "newText": "dependsOn"
-    },
-    "commitCharacters": [
-      ":"
-    ]
+      "newText": "dependsOn:"
+    }
   },
   {
     "label": "name",
@@ -29,17 +26,14 @@
       "value": "Type: `string`  \n"
     },
     "deprecated": false,
-    "preselect": false,
-    "sortText": "2_name",
+    "preselect": true,
+    "sortText": "1_name",
     "insertTextFormat": "plainText",
     "insertTextMode": "adjustIndentation",
     "textEdit": {
       "range": {},
-      "newText": "name"
-    },
-    "commitCharacters": [
-      ":"
-    ]
+      "newText": "name:"
+    }
   },
   {
     "label": "params",
@@ -50,17 +44,14 @@
       "value": "Type: `params`  \nWrite-only property  \n"
     },
     "deprecated": false,
-    "preselect": false,
-    "sortText": "2_params",
+    "preselect": true,
+    "sortText": "1_params",
     "insertTextFormat": "plainText",
     "insertTextMode": "adjustIndentation",
     "textEdit": {
       "range": {},
-      "newText": "params"
-    },
-    "commitCharacters": [
-      ":"
-    ]
+      "newText": "params:"
+    }
   },
   {
     "label": "scope",
@@ -77,10 +68,7 @@
     "insertTextMode": "adjustIndentation",
     "textEdit": {
       "range": {},
-      "newText": "scope"
-    },
-    "commitCharacters": [
-      ":"
-    ]
+      "newText": "scope:"
+    }
   }
 ]

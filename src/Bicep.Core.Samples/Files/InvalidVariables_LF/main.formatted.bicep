@@ -146,13 +146,13 @@ var oneArrayIndexCompletions = objectLiteralType.sixth[0][]
 // Issue 486
 var myFloat = 3. 14
 
-// secure cannot be used as a varaible decorator
+// secure cannot be used as a variable decorator
 @sys.secure()
 var something = 1
 
-// #completionTest(1) -> empty
+// #completionTest(1) -> sysAndDescription
 @
-// #completionTest(5) -> empty
+// #completionTest(5) -> description
 @sys.
 var anotherThing = true
 
@@ -221,3 +221,20 @@ var loopExpression = union([for thing in stuff: 4], [for thing in stuff: true])
 
 @batchSize(1)
 var batchSizeMakesNoSenseHere = false
+
+//KeyVault Secret Reference
+resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+  name: 'testkeyvault'
+}
+
+var keyVaultSecretVar = kv.getSecret('mySecret')
+var keyVaultSecretInterpolatedVar = '${kv.getSecret('mySecret')}'
+var keyVaultSecretObjectVar = {
+  secret: kv.getSecret('mySecret')
+}
+var keyVaultSecretArrayVar = [
+  kv.getSecret('mySecret')
+]
+var keyVaultSecretArrayInterpolatedVar = [
+  '${kv.getSecret('mySecret')}'
+]

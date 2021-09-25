@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "3253770147720241537"
+      "templateHash": "13546460887536036386"
     }
   },
   "parameters": {
@@ -24,7 +24,7 @@
   "resources": [
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "policy",
       "location": "[deployment().location]",
       "properties": {
@@ -44,7 +44,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "9475133241213277993"
+              "templateHash": "5064640466393476653"
             }
           },
           "parameters": {
@@ -388,7 +388,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2020-06-01",
       "name": "assignment",
       "location": "[deployment().location]",
       "properties": {
@@ -398,7 +398,7 @@
         "mode": "Incremental",
         "parameters": {
           "monitoringGovernanceId": {
-            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', 'policy'), '2019-10-01').outputs.monitoringGovernanceId.value]"
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', 'policy'), '2020-06-01').outputs.monitoringGovernanceId.value]"
           },
           "assignmentIdentityLocation": {
             "value": "[parameters('assignmentIdentityLocation')]"
@@ -414,7 +414,7 @@
             "_generator": {
               "name": "bicep",
               "version": "dev",
-              "templateHash": "17564324081954670432"
+              "templateHash": "4114066697075790073"
             }
           },
           "parameters": {

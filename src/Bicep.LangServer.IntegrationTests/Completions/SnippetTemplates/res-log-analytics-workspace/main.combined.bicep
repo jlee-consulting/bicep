@@ -1,5 +1,9 @@
+// $1 = logAnalyticsWorkspace
+// $2 = 'name'
+// $3 = 'Free'
+
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-10-01' = {
-  name: 'testLogAnalyticsWorkspace'
+  name: 'name'
   location: resourceGroup().location
   properties: {
     sku: {
@@ -7,4 +11,5 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-10
     }
   }
 }
+// Insert snippet here
 

@@ -1,9 +1,9 @@
 // Template spec
-resource templateSpec 'Microsoft.Resources/templateSpecs@2019-06-01-preview' = {
-  name: ${1:'templateSpecName'}
+resource /*${1:templateSpec}*/templateSpec 'Microsoft.Resources/templateSpecs@2019-06-01-preview' = {
+  name: /*${2:'name'}*/'name'
   location: resourceGroup().location
   properties: {
-    description: ${2:'templateDescription'}
-    displayName: ${3:'templateDisplayName'}
+    description: /*${3:'description'}*/'description'
+    displayName: /*${4:'displayName'}*/'displayName'
   }
 }
