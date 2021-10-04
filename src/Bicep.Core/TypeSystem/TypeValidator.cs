@@ -464,7 +464,7 @@ namespace Bicep.Core.TypeSystem
 
                 diagnosticWriter.Write(
                     config.OriginSyntax ?? positionable,
-                    x => x.MissingRequiredProperties(ShouldWarn(targetType), TryGetSourceDeclaration(config), missingRequiredProperties, blockName));
+                    x => x.MissingRequiredProperties(ShouldWarn(targetType), TryGetSourceDeclaration(config), expression, missingRequiredProperties, blockName));
             }
 
             var narrowedProperties = new List<TypeProperty>();
@@ -606,7 +606,7 @@ namespace Bicep.Core.TypeSystem
                 }
             }
 
-            return new ObjectType(targetType.Name, targetType.ValidationFlags, narrowedProperties, targetType.AdditionalPropertiesType, targetType.AdditionalPropertiesFlags, targetType.MethodResolver);
+            return new ObjectType(targetType.Name, targetType.ValidationFlags, narrowedProperties, targetType.AdditionalPropertiesType, targetType.AdditionalPropertiesFlags, targetType.MethodResolver.CopyToObject);
         }
 
         private (IPositionable positionable, string blockName) GetMissingPropertyContext(SyntaxBase expression)
@@ -618,6 +618,9 @@ namespace Bicep.Core.TypeSystem
             {
                 // for properties, put it on the property name in the parent object
                 ObjectPropertySyntax objectPropertyParent => (objectPropertyParent.Key, "object"),
+
+                // for import declarations, mark the entire configuration object
+                ImportDeclarationSyntax importParent => (expression, "object"),
 
                 // for declaration bodies, put it on the declaration identifier
                 ITopLevelNamedDeclarationSyntax declarationParent => (declarationParent.Name, declarationParent.Keyword.Text),

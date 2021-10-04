@@ -14,8 +14,17 @@ using Bicep.Core.TypeSystem.Az;
 
 namespace Bicep.Core.Semantics.Namespaces
 {
-    public class AzNamespaceSymbol : NamespaceSymbol
+    public static class AzNamespaceType
     {
+        public const string BuiltInName = "az";
+
+        public static NamespaceSettings Settings { get; } = new(
+            IsSingleton: true,
+            BicepProviderName: BuiltInName,
+            ConfigurationType: null,
+            ArmTemplateProviderName: "AzureResourceManager",
+            ArmTemplateProviderVersion: "1.0");
+
         private static ObjectType GetRestrictedResourceGroupReturnType(IBinder binder, IFileResolver fileResolver, IDiagnosticWriter diagnostics, ImmutableArray<FunctionArgumentSyntax> arguments, ImmutableArray<TypeSymbol> argumentTypes)
             => new ResourceGroupScopeType(arguments, Enumerable.Empty<TypeProperty>());
 
@@ -347,9 +356,16 @@ namespace Bicep.Core.Semantics.Namespaces
                 .Build();
         }
 
-        public AzNamespaceSymbol(ResourceScope resourceScope)
-            : base("az", GetAzOverloads(resourceScope), ImmutableArray<BannedFunction>.Empty, ImmutableArray<Decorator>.Empty)
+        public static NamespaceType Create(string aliasName, ResourceScope resourceScope, AzResourceTypeProvider resourceTypeProvider)
         {
+            return new NamespaceType(
+                aliasName,
+                Settings,
+                ImmutableArray<TypeProperty>.Empty,
+                GetAzOverloads(resourceScope),
+                ImmutableArray<BannedFunction>.Empty,
+                ImmutableArray<Decorator>.Empty,
+                resourceTypeProvider);
         }
     }
 }
