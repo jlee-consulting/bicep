@@ -5,6 +5,7 @@ using Bicep.Core.CodeAction;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -17,7 +18,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         public SecureParameterDefaultRule() : base(
             code: Code,
             description: CoreResources.SecureParameterDefaultRuleDescription,
-            docUri: new System.Uri("https://aka.ms/bicep/linter/secure-parameter-default"))
+            docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         { }
 
         override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
@@ -48,7 +49,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                 }
 
                 yield return CreateFixableDiagnosticForSpan(defaultValueSyntax.Span,
-                    new CodeFix("Remove default value", true,  // TODO: localize
+                    new CodeFix(CoreResources.SecureParameterDefaultFixTitle, true, CodeFixKind.QuickFix,
                             new CodeReplacement(defaultValueSyntax.Span, string.Empty)));
             }
         }
@@ -69,7 +70,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             }
         }
 
-        private bool ExpressionContainsNewGuid(ExpressionSyntax expression)
+        private static bool ExpressionContainsNewGuid(ExpressionSyntax expression)
         {
             var visitor = new NewGuidVisitor();
             expression.Accept(visitor);

@@ -5,12 +5,15 @@
     "_generator": {
       "name": "bicep",
       "version": "dev",
-      "templateHash": "4781252584255959653"
+      "templateHash": "14474387274517937293"
     }
   },
-  "functions": [],
   "variables": {
-    "deploymentLocation": "[deployment().location]"
+    "deploymentLocation": "[deployment().location]",
+    "scopesWithArmRepresentation": {
+      "tenant": "[tenant()]",
+      "managementGroup": "[managementGroup()]"
+    }
   },
   "resources": []
 }

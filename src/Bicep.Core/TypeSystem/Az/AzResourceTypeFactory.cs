@@ -5,6 +5,7 @@ using System.Linq;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Bicep.Core.Resources;
+using Bicep.Core.Semantics;
 
 namespace Bicep.Core.TypeSystem.Az
 {
@@ -17,11 +18,35 @@ namespace Bicep.Core.TypeSystem.Az
             typeCache = new();
         }
 
-        public ResourceType GetResourceType(Azure.Bicep.Types.Concrete.ResourceType resourceType)
+        public ResourceTypeComponents GetResourceType(Azure.Bicep.Types.Concrete.ResourceType resourceType, IEnumerable<FunctionOverload> resourceFunctions)
         {
-            var output = GetTypeSymbol(resourceType, false) as ResourceType;
+            var resourceTypeReference = ResourceTypeReference.Parse(resourceType.Name);
+            var bodyType = GetTypeSymbol(resourceType.Body.Type, true);
 
-            return output ?? throw new ArgumentException("Unable to deserialize resource type", nameof(resourceType));
+            if (bodyType is ObjectType objectType && resourceFunctions.Any())
+            {
+                bodyType = new ObjectType(bodyType.Name, bodyType.ValidationFlags, objectType.Properties.Values, objectType.AdditionalPropertiesType, objectType.AdditionalPropertiesFlags, resourceFunctions);
+            }
+
+            return new ResourceTypeComponents(resourceTypeReference, ToResourceScope(resourceType.ScopeType), bodyType);
+        }
+
+        public IEnumerable<FunctionOverload> GetResourceFunctionOverloads(Azure.Bicep.Types.Concrete.ResourceFunctionType resourceFunctionType)
+        {
+            yield return new FunctionOverloadBuilder(resourceFunctionType.Name)
+                .WithReturnType(GetTypeSymbol(resourceFunctionType.Output.Type, false))
+                .WithFlags(FunctionFlags.RequiresInlining)
+                .Build();
+
+            if (resourceFunctionType.Input is not null)
+            {
+                yield return new FunctionOverloadBuilder(resourceFunctionType.Name)
+                    .WithRequiredParameter("apiVersion", new StringLiteralType(resourceFunctionType.ApiVersion), "The api version")
+                    .WithRequiredParameter("params", GetTypeSymbol(resourceFunctionType.Input.Type, false), $"{resourceFunctionType.Name} parameters")
+                    .WithReturnType(GetTypeSymbol(resourceFunctionType.Output.Type, false))
+                    .WithFlags(FunctionFlags.RequiresInlining)
+                    .Build();
+            }
         }
 
         private TypeSymbol GetTypeSymbol(Azure.Bicep.Types.Concrete.TypeBase serializedType, bool isResourceBodyType)
@@ -55,7 +80,7 @@ namespace Bicep.Core.TypeSystem.Az
             {
                 flags |= TypePropertyFlags.DeployTimeConstant;
             }
-            if(!input.Flags.HasFlag(Azure.Bicep.Types.Concrete.ObjectPropertyFlags.Required) && !input.Flags.HasFlag(Azure.Bicep.Types.Concrete.ObjectPropertyFlags.ReadOnly))
+            if (!input.Flags.HasFlag(Azure.Bicep.Types.Concrete.ObjectPropertyFlags.Required) && !input.Flags.HasFlag(Azure.Bicep.Types.Concrete.ObjectPropertyFlags.ReadOnly))
             {
                 // for non-required and non-readonly resource properties, we allow null assignment
                 flags |= TypePropertyFlags.AllowImplicitNull;
@@ -69,7 +94,8 @@ namespace Bicep.Core.TypeSystem.Az
             switch (typeBase)
             {
                 case Azure.Bicep.Types.Concrete.BuiltInType builtInType:
-                    return builtInType.Kind switch {
+                    return builtInType.Kind switch
+                    {
                         Azure.Bicep.Types.Concrete.BuiltInTypeKind.Any => LanguageConstants.Any,
                         Azure.Bicep.Types.Concrete.BuiltInTypeKind.Null => LanguageConstants.Null,
                         Azure.Bicep.Types.Concrete.BuiltInTypeKind.Bool => LanguageConstants.Bool,
@@ -81,34 +107,28 @@ namespace Bicep.Core.TypeSystem.Az
                         _ => throw new ArgumentException(),
                     };
                 case Azure.Bicep.Types.Concrete.ObjectType objectType:
-                {
-                    var additionalProperties = objectType.AdditionalProperties != null ? GetTypeReference(objectType.AdditionalProperties) : null;
-                    var properties = objectType.Properties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value));
+                    {
+                        var additionalProperties = objectType.AdditionalProperties != null ? GetTypeReference(objectType.AdditionalProperties) : null;
+                        var properties = objectType.Properties.Select(kvp => GetTypeProperty(kvp.Key, kvp.Value));
 
-                    return new ObjectType(objectType.Name, GetValidationFlags(isResourceBodyType), properties, additionalProperties, TypePropertyFlags.None);
-                }
+                        return new ObjectType(objectType.Name, GetValidationFlags(isResourceBodyType), properties, additionalProperties, TypePropertyFlags.None);
+                    }
                 case Azure.Bicep.Types.Concrete.ArrayType arrayType:
-                {
-                    return new TypedArrayType(GetTypeReference(arrayType.ItemType), GetValidationFlags(isResourceBodyType));
-                }
-                case Azure.Bicep.Types.Concrete.ResourceType resourceType:
-                {
-                    var resourceTypeReference = ResourceTypeReference.Parse(resourceType.Name);
-                    var bodyType = GetTypeSymbol(resourceType.Body.Type, true);
-                    return new ResourceType(resourceTypeReference, ToResourceScope(resourceType.ScopeType), bodyType);
-                }
+                    {
+                        return new TypedArrayType(GetTypeReference(arrayType.ItemType), GetValidationFlags(isResourceBodyType));
+                    }
                 case Azure.Bicep.Types.Concrete.UnionType unionType:
-                {
-                    return UnionType.Create(unionType.Elements.Select(x => GetTypeReference(x)));
-                }
+                    {
+                        return TypeHelper.CreateTypeUnion(unionType.Elements.Select(x => GetTypeReference(x)));
+                    }
                 case Azure.Bicep.Types.Concrete.StringLiteralType stringLiteralType:
                     return new StringLiteralType(stringLiteralType.Value);
                 case Azure.Bicep.Types.Concrete.DiscriminatedObjectType discriminatedObjectType:
-                {
-                    var elementReferences = discriminatedObjectType.Elements.Select(kvp => new DeferredTypeReference(() => ToCombinedType(discriminatedObjectType.BaseProperties, kvp.Key, kvp.Value, isResourceBodyType)));
+                    {
+                        var elementReferences = discriminatedObjectType.Elements.Select(kvp => new DeferredTypeReference(() => ToCombinedType(discriminatedObjectType.BaseProperties, kvp.Key, kvp.Value, isResourceBodyType)));
 
-                    return new DiscriminatedObjectType(discriminatedObjectType.Name, GetValidationFlags(isResourceBodyType), discriminatedObjectType.Discriminator, elementReferences);
-                }
+                        return new DiscriminatedObjectType(discriminatedObjectType.Name, GetValidationFlags(isResourceBodyType), discriminatedObjectType.Discriminator, elementReferences);
+                    }
                 default:
                     throw new ArgumentException();
             }

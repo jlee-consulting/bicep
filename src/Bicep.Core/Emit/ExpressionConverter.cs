@@ -118,7 +118,7 @@ namespace Bicep.Core.Emit
             switch (functionCall)
             {
                 case FunctionCallSyntax function:
-                    return ConvertFunction(
+                    return CreateFunction(
                         function.Name.IdentifierName,
                         function.Arguments.Select(a => ConvertExpression(a.Expression)));
 
@@ -133,7 +133,7 @@ namespace Bicep.Core.Emit
                     {
                         case INamespaceSymbol namespaceSymbol:
                             Debug.Assert(indexExpression is null, "Indexing into a namespace should have been blocked by type analysis");
-                            return ConvertFunction(
+                            return CreateFunction(
                                 instanceFunctionCall.Name.IdentifierName,
                                 instanceFunctionCall.Arguments.Select(a => ConvertExpression(a.Expression)));
                         case ResourceSymbol resourceSymbol when context.SemanticModel.ResourceMetadata.TryLookup(resourceSymbol.DeclaringSyntax) is { } resource:
@@ -146,7 +146,9 @@ namespace Bicep.Core.Emit
                                 // Handle list<method_name>(...) method on resource symbol - e.g. stgAcc.listKeys()
                                 var convertedArgs = instanceFunctionCall.Arguments.SelectArray(a => ConvertExpression(a.Expression));
                                 var resourceIdExpression = converter.GetFullyQualifiedResourceId(resource);
-                                var apiVersionExpression = new JTokenExpression(resource.TypeReference.ApiVersion);
+
+                                var apiVersion = resource.TypeReference.ApiVersion ?? throw new InvalidOperationException($"Expected resource type {resource.TypeReference.FormatName()} to contain version");
+                                var apiVersionExpression = new JTokenExpression(apiVersion);
 
                                 var listArgs = convertedArgs.Length switch
                                 {
@@ -204,10 +206,10 @@ namespace Bicep.Core.Emit
                 if (context.SemanticModel.ResourceMetadata.TryLookup(arrayAccess.BaseExpression) is { } resource &&
                     resource.Symbol.IsCollection)
                 {
-                    var resourceConverter = this.CreateConverterForIndexReplacement(resource.NameSyntax, arrayAccess.IndexExpression, arrayAccess);
+                    var movedSyntax = context.Settings.EnableSymbolicNames ? resource.Symbol.NameSyntax : resource.NameSyntax;
 
-                    // TODO: Can this return a language expression?
-                    return resourceConverter.ToFunctionExpression(arrayAccess.BaseExpression);
+                    return this.CreateConverterForIndexReplacement(movedSyntax, arrayAccess.IndexExpression, arrayAccess)
+                        .GetReferenceExpression(resource, arrayAccess.IndexExpression, true);
                 }
 
                 switch (this.context.SemanticModel.GetSymbolInfo(arrayAccess.BaseExpression))
@@ -225,11 +227,19 @@ namespace Bicep.Core.Emit
                 ConvertExpression(arrayAccess.IndexExpression));
         }
 
-        private LanguageExpression? ConvertResourcePropertyAccess(ResourceMetadata resource, SyntaxBase? indexExpression, string propertyName)
+        private LanguageExpression ConvertResourcePropertyAccess(ResourceMetadata resource, SyntaxBase? indexExpression, string propertyName)
         {
+            if (!resource.IsAzResource)
+            {
+                // For an extensible resource, always generate a 'reference' statement.
+                // User-defined properties appear inside "properties", so use a non-full reference.
+                return AppendProperties(
+                    GetReferenceExpression(resource, indexExpression, false),
+                    new JTokenExpression(propertyName));
+            }
+
             // special cases for certain resource property access. if we recurse normally, we'll end up
             // generating statements like reference(resourceId(...)).id which are not accepted by ARM
-
             switch ((propertyName, context.Settings.EnableSymbolicNames))
             {
                 case ("id", true):
@@ -251,15 +261,18 @@ namespace Bicep.Core.Emit
                     // we should return whatever the user has set as the value of the 'name' property for a predictable user experience.
                     return ConvertExpression(resource.NameSyntax);
                 case ("type", false):
-                    return new JTokenExpression(resource.TypeReference.FullyQualifiedType);
+                    return new JTokenExpression(resource.TypeReference.FormatType());
                 case ("apiVersion", false):
-                    return new JTokenExpression(resource.TypeReference.ApiVersion);
+                    var apiVersion = resource.TypeReference.ApiVersion ?? throw new InvalidOperationException($"Expected resource type {resource.TypeReference.FormatName()} to contain version");
+                    return new JTokenExpression(apiVersion);
                 case ("properties", _):
                     // use the reference() overload without "full" to generate a shorter expression
                     // this is dependent on the name expression which could involve locals in case of a resource collection
                     return GetReferenceExpression(resource, indexExpression, false);
                 default:
-                    return null;
+                    return AppendProperties(
+                        GetReferenceExpression(resource, indexExpression, true),
+                        new JTokenExpression(propertyName));
             }
         }
 
@@ -277,26 +290,23 @@ namespace Bicep.Core.Emit
 
         private LanguageExpression ConvertPropertyAccess(PropertyAccessSyntax propertyAccess)
         {
-            if ((propertyAccess.BaseExpression is VariableAccessSyntax || propertyAccess.BaseExpression is ResourceAccessSyntax) &&
-                context.SemanticModel.ResourceMetadata.TryLookup(propertyAccess.BaseExpression) is { } resource &&
-                CreateConverterForIndexReplacement(resource.NameSyntax, null, propertyAccess)
-                    .ConvertResourcePropertyAccess(resource, null, propertyAccess.PropertyName.IdentifierName) is { } convertedSingle)
+            if (context.SemanticModel.ResourceMetadata.TryLookup(propertyAccess.BaseExpression) is { } resource)
             {
+                var movedSyntax = context.Settings.EnableSymbolicNames ? resource.Symbol.NameSyntax : resource.NameSyntax;
+
                 // we are doing property access on a single resource
-                // and we are dealing with special case properties
-                return convertedSingle;
+                return CreateConverterForIndexReplacement(movedSyntax, null, propertyAccess)
+                    .ConvertResourcePropertyAccess(resource, null, propertyAccess.PropertyName.IdentifierName);
             }
 
             if (propertyAccess.BaseExpression is ArrayAccessSyntax propArrayAccess &&
-                (propArrayAccess.BaseExpression is VariableAccessSyntax || propArrayAccess.BaseExpression is ResourceAccessSyntax) &&
-                context.SemanticModel.ResourceMetadata.TryLookup(propArrayAccess.BaseExpression) is { } resourceCollection &&
-                CreateConverterForIndexReplacement(resourceCollection.NameSyntax, propArrayAccess.IndexExpression, propertyAccess)
-                    .ConvertResourcePropertyAccess(resourceCollection, propArrayAccess.IndexExpression, propertyAccess.PropertyName.IdentifierName) is { } convertedCollection)
+                context.SemanticModel.ResourceMetadata.TryLookup(propArrayAccess.BaseExpression) is { } resourceCollection)
             {
+                var movedSyntax = context.Settings.EnableSymbolicNames ? resourceCollection.Symbol.NameSyntax : resourceCollection.NameSyntax;
 
                 // we are doing property access on an array access of a resource collection
-                // and we are dealing with special case properties
-                return convertedCollection;
+                return CreateConverterForIndexReplacement(movedSyntax, propArrayAccess.IndexExpression, propertyAccess)
+                    .ConvertResourcePropertyAccess(resourceCollection, propArrayAccess.IndexExpression, propertyAccess.PropertyName.IdentifierName);
             }
 
             if (propertyAccess.BaseExpression is VariableAccessSyntax modulePropVariableAccess &&
@@ -374,22 +384,21 @@ namespace Bicep.Core.Emit
 
         public IEnumerable<LanguageExpression> GetResourceNameSegments(ResourceMetadata resource)
         {
+            // TODO move this into az extension
             var typeReference = resource.TypeReference;
             var ancestors = this.context.SemanticModel.ResourceAncestors.GetAncestors(resource);
-            var nameSyntax = resource.NameSyntax;
-            var nameExpression = ConvertExpression(nameSyntax);
+            var nameExpression = ConvertExpression(resource.NameSyntax);
+
+            var typesAfterProvider = typeReference.TypeSegments.Skip(1).ToImmutableArray();
 
             if (ancestors.Length > 0)
             {
-                var firstAncestorNameLength = typeReference.Types.Length - ancestors.Length;
-
-                var resourceName = ConvertExpression(resource.NameSyntax);
+                var firstAncestorNameLength = typesAfterProvider.Length - ancestors.Length;
 
                 var parentNames = ancestors.SelectMany((x, i) =>
                 {
-                    var nameSyntax = x.Resource.NameSyntax;
-                    var nameExpression = CreateConverterForIndexReplacement(nameSyntax, x.IndexExpression, x.Resource.Symbol.NameSyntax)
-                        .ConvertExpression(nameSyntax);
+                    var nameExpression = CreateConverterForIndexReplacement(x.Resource.NameSyntax, x.IndexExpression, resource.Symbol.NameSyntax)
+                        .ConvertExpression(x.Resource.NameSyntax);
 
                     if (i == 0 && firstAncestorNameLength > 1)
                     {
@@ -402,15 +411,15 @@ namespace Bicep.Core.Emit
                     return nameExpression.AsEnumerable();
                 });
 
-                return parentNames.Concat(resourceName.AsEnumerable());
+                return parentNames.Concat(nameExpression.AsEnumerable());
             }
 
-            if (typeReference.Types.Length == 1)
+            if (typesAfterProvider.Length == 1)
             {
                 return nameExpression.AsEnumerable();
             }
 
-            return typeReference.Types.Select(
+            return typesAfterProvider.Select(
                 (type, i) => AppendProperties(
                     CreateFunction("split", nameExpression, new JTokenExpression("/")),
                     new JTokenExpression(i)));
@@ -450,7 +459,7 @@ namespace Bicep.Core.Emit
         public static SyntaxBase GetModuleNameSyntax(ModuleSymbol moduleSymbol)
         {
             // this condition should have already been validated by the type checker
-            return moduleSymbol.SafeGetBodyPropertyValue(LanguageConstants.ResourceNamePropertyName) ?? throw new ArgumentException($"Expected module syntax body to contain property 'name'");
+            return moduleSymbol.TryGetBodyPropertyValue(LanguageConstants.ModuleNamePropertyName) ?? throw new ArgumentException($"Expected module syntax body to contain property 'name'");
         }
 
         public LanguageExpression GetUnqualifiedResourceId(ResourceMetadata resource)
@@ -459,7 +468,7 @@ namespace Bicep.Core.Emit
                 context,
                 this,
                 context.ResourceScopeData[resource],
-                resource.TypeReference.FullyQualifiedType,
+                resource.TypeReference.FormatType(),
                 GetResourceNameSegments(resource));
         }
 
@@ -469,7 +478,7 @@ namespace Bicep.Core.Emit
                 context,
                 this,
                 context.ResourceScopeData[resource],
-                resource.TypeReference.FullyQualifiedType,
+                resource.TypeReference.FormatType(),
                 GetResourceNameSegments(resource));
         }
 
@@ -497,8 +506,7 @@ namespace Bicep.Core.Emit
             return AppendProperties(
                 CreateFunction(
                     "reference",
-                    GetFullyQualifiedResourceId(moduleSymbol),
-                    new JTokenExpression(TemplateWriter.NestedDeploymentResourceApiVersion)),
+                    GetFullyQualifiedResourceId(moduleSymbol)),
                 new JTokenExpression("outputs"));
         }
 
@@ -508,23 +516,36 @@ namespace Bicep.Core.Emit
                 GenerateSymbolicReference(resource.Symbol.Name, indexExpression) :
                 GetFullyQualifiedResourceId(resource);
 
+            if (!resource.IsAzResource)
+            {
+                // For an extensible resource, always generate a 'reference' statement.
+                // User-defined properties appear inside "properties", so use a non-full reference.
+                return CreateFunction(
+                    "reference",
+                    referenceExpression);
+            }
+
             // full gives access to top-level resource properties, but generates a longer statement
             if (full)
             {
+                var apiVersion = resource.TypeReference.ApiVersion ?? throw new InvalidOperationException($"Expected resource type {resource.TypeReference.FormatName()} to contain version");
+
                 return CreateFunction(
                     "reference",
                     referenceExpression,
-                    new JTokenExpression(resource.TypeReference.ApiVersion),
+                    new JTokenExpression(apiVersion),
                     new JTokenExpression("full"));
             }
 
             if (resource.IsExistingResource && !context.Settings.EnableSymbolicNames)
             {
+                var apiVersion = resource.TypeReference.ApiVersion ?? throw new InvalidOperationException($"Expected resource type {resource.TypeReference.FormatName()} to contain version");
+
                 // we must include an API version for an existing resource, because it cannot be inferred from any deployed template resource
                 return CreateFunction(
                     "reference",
                     referenceExpression,
-                    new JTokenExpression(resource.TypeReference.ApiVersion));
+                    new JTokenExpression(apiVersion));
             }
 
             return CreateFunction(
@@ -719,33 +740,6 @@ namespace Bicep.Core.Emit
             throw new NotImplementedException($"Unexpected expression type '{converted.GetType().Name}'.");
         }
 
-        private static LanguageExpression ConvertFunction(string functionName, IEnumerable<LanguageExpression> arguments)
-        {
-            if (ShouldReplaceUnsupportedFunction(functionName, arguments, out var replacementExpression))
-            {
-                return replacementExpression;
-            }
-
-            return CreateFunction(functionName, arguments);
-        }
-
-        private static bool ShouldReplaceUnsupportedFunction(string functionName, IEnumerable<LanguageExpression> arguments, [NotNullWhen(true)] out LanguageExpression? replacementExpression)
-        {
-            switch (functionName)
-            {
-                // These functions have not yet been implemented in ARM. For now, we will just return an empty object if they are accessed directly.
-                case "tenant":
-                case "managementGroup":
-                case "subscription" when arguments.Any():
-                case "resourceGroup" when arguments.Any():
-                    replacementExpression = GetCreateObjectExpression();
-                    return true;
-            }
-
-            replacementExpression = null;
-            return false;
-        }
-
         private FunctionExpression ConvertArray(ArraySyntax syntax)
         {
             // we are using the createArray() function as a proxy for an array literal
@@ -902,6 +896,14 @@ namespace Bicep.Core.Emit
                 return GenerateUnqualifiedResourceId(managementGroupType, new[] { managementGroupName });
             }
         }
+
+        /// <summary>
+        /// Generates a management group id, using the managementGroup() function. Only suitable for use if the template being generated is targeting the management group scope.
+        /// </summary>
+        public static LanguageExpression GenerateCurrentManagementGroupId()
+            => AppendProperties(
+                CreateFunction("managementGroup"),
+                new JTokenExpression("id"));
 
         private static FunctionExpression CreateFunction(string name, params LanguageExpression[] parameters)
             => CreateFunction(name, parameters as IEnumerable<LanguageExpression>);

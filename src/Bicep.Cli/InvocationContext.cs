@@ -4,8 +4,8 @@
 using Bicep.Core.Emit;
 using Bicep.Core.Features;
 using Bicep.Core.Registry;
+using Bicep.Core.Registry.Auth;
 using Bicep.Core.Semantics.Namespaces;
-using Bicep.Core.TypeSystem;
 using Bicep.Core.TypeSystem.Az;
 using System.IO;
 
@@ -25,14 +25,14 @@ namespace Bicep.Cli
             OutputWriter = outputWriter;
             ErrorWriter = errorWriter;
             Features = features ?? new FeatureProvider();
-            ClientFactory = clientFactory ?? new ContainerRegistryClientFactory();
-            TemplateSpecRepositoryFactory = templateSpecRepositoryFactory ?? new TemplateSpecRepositoryFactory();
+            ClientFactory = clientFactory ?? new ContainerRegistryClientFactory(new TokenCredentialFactory());
+            TemplateSpecRepositoryFactory = templateSpecRepositoryFactory ?? new TemplateSpecRepositoryFactory(new TokenCredentialFactory());
             NamespaceProvider = new DefaultNamespaceProvider(azResourceTypeLoader, Features);
         }
 
         public INamespaceProvider NamespaceProvider { get; }
 
-        public TextWriter OutputWriter { get; } 
+        public TextWriter OutputWriter { get; }
 
         public TextWriter ErrorWriter { get; }
 

@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Azure.Core;
-using Bicep.Core.Registry;
 using Bicep.Core.Samples;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
@@ -10,7 +8,6 @@ using Bicep.Core.UnitTests.Registry;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Moq;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -84,6 +81,17 @@ namespace Bicep.Cli.IntegrationTests
             error.Should().Contain("The specified module target \"./test.bicep\" is not supported.");
         }
 
+        [TestMethod]
+        public async Task Publish_OciDigestTarget_ShouldProduceExpectedError()
+        {
+            var settings = new InvocationSettings(BicepTestConstants.CreateFeaturesProvider(TestContext, registryEnabled: true), BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory);
+            var (output, error, result) = await Bicep(settings, "publish", "WrongFile.bicep", "--target", "br:example.com/test@sha256:80f63ced0b80b63874c808a321f472755a3c9e93987d1fa0a51e13c65e4a52b9");
+
+            result.Should().Be(1);
+            output.Should().BeEmpty();
+            error.Should().Contain("The specified module target \"br:example.com/test@sha256:80f63ced0b80b63874c808a321f472755a3c9e93987d1fa0a51e13c65e4a52b9\" is not supported.");
+        }
+
         [DataTestMethod]
         [DynamicData(nameof(GetValidDataSets), DynamicDataSourceType.Method, DynamicDataDisplayNameDeclaringType = typeof(DataSet), DynamicDataDisplayName = nameof(DataSet.GetDisplayName))]
         public async Task Publish_ValidFile_ShouldSucceed(DataSet dataSet)
@@ -101,7 +109,7 @@ namespace Bicep.Cli.IntegrationTests
             var compiledFilePath = Path.Combine(outputDirectory, DataSet.TestFileMainCompiled);
 
             // mock client factory caches the clients
-            var testClient = (MockRegistryBlobClient)clientFactory.CreateBlobClient(registryUri, repository, Repository.Create<TokenCredential>().Object);
+            var testClient = (MockRegistryBlobClient)clientFactory.CreateBlobClient(BicepTestConstants.BuiltInConfiguration, registryUri, repository);
 
             var settings = new InvocationSettings(BicepTestConstants.CreateFeaturesProvider(TestContext, registryEnabled: true), clientFactory, templateSpecRepositoryFactory);
 
@@ -117,6 +125,47 @@ namespace Bicep.Cli.IntegrationTests
 
             // publish the same content again
             var (output2, error2, result2) = await Bicep(settings, "publish", bicepFilePath, "--target", $"br:{registryStr}/{repository}:v1");
+            result2.Should().Be(0);
+            output2.Should().BeEmpty();
+            AssertNoErrors(error2);
+
+            // we should still only have 1 module
+            expectedCompiledStream.Position = 0;
+            testClient.Should().OnlyHaveModule("v1", expectedCompiledStream);
+        }
+
+        [DataTestMethod]
+        [DynamicData(nameof(GetValidDataSets), DynamicDataSourceType.Method, DynamicDataDisplayNameDeclaringType = typeof(DataSet), DynamicDataDisplayName = nameof(DataSet.GetDisplayName))]
+        public async Task Publish_ValidArmTemplteFile_ShouldSucceed(DataSet dataSet)
+        {
+            var outputDirectory = dataSet.SaveFilesToTestDirectory(TestContext);
+
+            var registryStr = "example.com";
+            var registryUri = new Uri($"https://{registryStr}");
+            var repository = $"test/{dataSet.Name}".ToLowerInvariant();
+
+            var clientFactory = dataSet.CreateMockRegistryClients(TestContext, (registryUri, repository));
+            var templateSpecRepositoryFactory = dataSet.CreateMockTemplateSpecRepositoryFactory(TestContext);
+            await dataSet.PublishModulesToRegistryAsync(clientFactory, TestContext);
+            var compiledFilePath = Path.Combine(outputDirectory, DataSet.TestFileMainCompiled);
+
+            // mock client factory caches the clients
+            var testClient = (MockRegistryBlobClient)clientFactory.CreateBlobClient(BicepTestConstants.BuiltInConfiguration, registryUri, repository);
+
+            var settings = new InvocationSettings(BicepTestConstants.CreateFeaturesProvider(TestContext, registryEnabled: true), clientFactory, templateSpecRepositoryFactory);
+
+            var (output, error, result) = await Bicep(settings, "publish", compiledFilePath, "--target", $"br:{registryStr}/{repository}:v1");
+            result.Should().Be(0);
+            output.Should().BeEmpty();
+            AssertNoErrors(error);
+
+            using var expectedCompiledStream = new FileStream(compiledFilePath, FileMode.Open, FileAccess.Read);
+
+            // verify the module was published
+            testClient.Should().OnlyHaveModule("v1", expectedCompiledStream);
+
+            // publish the same content again
+            var (output2, error2, result2) = await Bicep(settings, "publish", compiledFilePath, "--target", $"br:{registryStr}/{repository}:v1");
             result2.Should().Be(0);
             output2.Should().BeEmpty();
             AssertNoErrors(error2);

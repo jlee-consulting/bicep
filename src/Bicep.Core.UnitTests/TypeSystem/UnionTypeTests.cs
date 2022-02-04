@@ -13,29 +13,29 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void CreatingEmptyUnionShouldProduceTheNeverType()
         {
-            var actual = UnionType.Create(Enumerable.Empty<ITypeReference>());
+            var actual = TypeHelper.CreateTypeUnion(Enumerable.Empty<ITypeReference>());
             actual.Name.Should().Be("never");
             actual.TypeKind.Should().Be(TypeKind.Never);
             actual.Should().BeOfType<UnionType>();
 
-            ((UnionType) actual).Members.Should().BeEmpty();
+            ((UnionType)actual).Members.Should().BeEmpty();
         }
 
         [TestMethod]
         public void FlatUnionTypeShouldBeConstructedCorrectlyViaParamsSyntax()
         {
-            var actual = UnionType.Create(LanguageConstants.Bool, LanguageConstants.String);
+            var actual = TypeHelper.CreateTypeUnion(LanguageConstants.Bool, LanguageConstants.String);
             actual.Name.Should().Be("bool | string");
             actual.TypeKind.Should().Be(TypeKind.Union);
             actual.Should().BeOfType<UnionType>();
 
-            ((UnionType) actual).Members.Select(x => x.Type).Should().Equal(LanguageConstants.Bool, LanguageConstants.String);
+            ((UnionType)actual).Members.Select(x => x.Type).Should().Equal(LanguageConstants.Bool, LanguageConstants.String);
         }
 
         [TestMethod]
         public void FlatUnionTypeShouldBeConstructedCorrectlyViaEnumerableSyntax()
         {
-            var actual = UnionType.Create(LanguageConstants.Null, LanguageConstants.Int, LanguageConstants.Bool);
+            var actual = TypeHelper.CreateTypeUnion(LanguageConstants.Null, LanguageConstants.Int, LanguageConstants.Bool);
             actual.Name.Should().Be("bool | int | null");
             actual.TypeKind.Should().Be(TypeKind.Union);
             actual.Should().BeOfType<UnionType>();
@@ -46,23 +46,23 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void UnionTypeShouldFlattenInnerUnionsAndDeduplicateTypes()
         {
-            var innerMost = UnionType.Create(LanguageConstants.Null, LanguageConstants.String);
-            var inner = UnionType.Create(innerMost, LanguageConstants.Array);
-            var actual = UnionType.Create(LanguageConstants.Bool, inner, LanguageConstants.Object);
+            var innerMost = TypeHelper.CreateTypeUnion(LanguageConstants.Null, LanguageConstants.String);
+            var inner = TypeHelper.CreateTypeUnion(innerMost, LanguageConstants.Array);
+            var actual = TypeHelper.CreateTypeUnion(LanguageConstants.Bool, inner, LanguageConstants.Object);
 
             actual.Name.Should().Be("array | bool | null | object | string");
             actual.TypeKind.Should().Be(TypeKind.Union);
             actual.Should().BeOfType<UnionType>();
 
-            ((UnionType) actual).Members.Select(x => x.Type).Should().Equal(LanguageConstants.Array, LanguageConstants.Bool, LanguageConstants.Null, LanguageConstants.Object, LanguageConstants.String);
+            ((UnionType)actual).Members.Select(x => x.Type).Should().Equal(LanguageConstants.Array, LanguageConstants.Bool, LanguageConstants.Null, LanguageConstants.Object, LanguageConstants.String);
         }
 
         [TestMethod]
         public void UnionTypeShouldDeduplicateTypes()
         {
-            var innerMost = UnionType.Create(LanguageConstants.Null, LanguageConstants.String, LanguageConstants.String);
-            var inner = UnionType.Create(innerMost, LanguageConstants.Array, LanguageConstants.Null, LanguageConstants.Array);
-            var actual = UnionType.Create(LanguageConstants.Bool, LanguageConstants.Null, inner, inner, LanguageConstants.Object, innerMost, LanguageConstants.String);
+            var innerMost = TypeHelper.CreateTypeUnion(LanguageConstants.Null, LanguageConstants.String, LanguageConstants.String);
+            var inner = TypeHelper.CreateTypeUnion(innerMost, LanguageConstants.Array, LanguageConstants.Null, LanguageConstants.Array);
+            var actual = TypeHelper.CreateTypeUnion(LanguageConstants.Bool, LanguageConstants.Null, inner, inner, LanguageConstants.Object, innerMost, LanguageConstants.String);
 
             actual.Name.Should().Be("array | bool | null | object | string");
             actual.TypeKind.Should().Be(TypeKind.Union);
@@ -74,7 +74,7 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void UnionTypeShouldDisplayStringLiteralsCorrectly()
         {
-            var unionType = UnionType.Create(
+            var unionType = TypeHelper.CreateTypeUnion(
                 new StringLiteralType("Error"),
                 new StringLiteralType("Warning"),
                 new StringLiteralType("Info")
@@ -86,7 +86,7 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void UnionTypeInvolvingResourceScopeTypesShouldProduceExpectedDisplayString()
         {
-            var unionType = UnionType.Create(
+            var unionType = TypeHelper.CreateTypeUnion(
                 new StringLiteralType("Test"),
                 LanguageConstants.CreateResourceScopeReference(ResourceScope.Resource),
                 LanguageConstants.CreateResourceScopeReference(ResourceScope.Subscription | ResourceScope.Tenant)
@@ -98,26 +98,26 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void SingletonUnionCreationShouldProduceSingletonType()
         {
-            UnionType.Create(LanguageConstants.Int).Should().BeSameAs(LanguageConstants.Int);
-            UnionType.Create(LanguageConstants.String).Should().BeSameAs(LanguageConstants.String);
+            TypeHelper.CreateTypeUnion(LanguageConstants.Int).Should().BeSameAs(LanguageConstants.Int);
+            TypeHelper.CreateTypeUnion(LanguageConstants.String).Should().BeSameAs(LanguageConstants.String);
 
-            UnionType.Create(UnionType.Create(UnionType.Create(LanguageConstants.Bool))).Should().BeSameAs(LanguageConstants.Bool);
+            TypeHelper.CreateTypeUnion(TypeHelper.CreateTypeUnion(TypeHelper.CreateTypeUnion(LanguageConstants.Bool))).Should().BeSameAs(LanguageConstants.Bool);
         }
 
         [TestMethod]
         public void UnionsOfStringsAndStringLiteralTypesShouldProduceStringType()
         {
-            UnionType.Create(LanguageConstants.String, new StringLiteralType("hello"), new StringLiteralType("there")).Should().BeSameAs(LanguageConstants.String);
+            TypeHelper.CreateTypeUnion(LanguageConstants.String, new StringLiteralType("hello"), new StringLiteralType("there")).Should().BeSameAs(LanguageConstants.String);
 
-            UnionType.Create(LanguageConstants.String, new StringLiteralType("hello"), LanguageConstants.Bool, new StringLiteralType("there")).Name.Should().Be("bool | string");
+            TypeHelper.CreateTypeUnion(LanguageConstants.String, new StringLiteralType("hello"), LanguageConstants.Bool, new StringLiteralType("there")).Name.Should().Be("bool | string");
         }
 
         [TestMethod]
         public void UnionsOfUntypedAndTypedArraysShouldProduceUntypedArrayType()
         {
-            UnionType.Create(LanguageConstants.Array, new TypedArrayType(LanguageConstants.String, TypeSymbolValidationFlags.Default)).Should().BeSameAs(LanguageConstants.Array);
+            TypeHelper.CreateTypeUnion(LanguageConstants.Array, new TypedArrayType(LanguageConstants.String, TypeSymbolValidationFlags.Default)).Should().BeSameAs(LanguageConstants.Array);
 
-            var actual = UnionType.Create(
+            var actual = TypeHelper.CreateTypeUnion(
                 LanguageConstants.Array,
                 new TypedArrayType(LanguageConstants.Int, TypeSymbolValidationFlags.Default),
                 LanguageConstants.String,
@@ -128,7 +128,7 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void UnionsInvolvingAnyTypeShouldProduceAnyType()
         {
-            UnionType.Create(LanguageConstants.String, LanguageConstants.Int, new TypedArrayType(LanguageConstants.Int, TypeSymbolValidationFlags.Default), LanguageConstants.Any).Should().BeSameAs(LanguageConstants.Any);
+            TypeHelper.CreateTypeUnion(LanguageConstants.String, LanguageConstants.Int, new TypedArrayType(LanguageConstants.Int, TypeSymbolValidationFlags.Default), LanguageConstants.Any).Should().BeSameAs(LanguageConstants.Any);
         }
     }
 }

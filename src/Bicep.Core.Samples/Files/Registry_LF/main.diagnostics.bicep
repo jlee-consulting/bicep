@@ -3,10 +3,19 @@ targetScope = 'subscription'
 resource rg 'Microsoft.Resources/resourceGroups@2020-06-01' = {
   name: 'adotfrank-rg'
   location: deployment().location
+//@[12:33) [no-loc-expr-outside-params (Warning)] Use a parameter here instead of 'deployment().location'. 'resourceGroup().location' and 'deployment().location' should only be used as a default value for parameters. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-loc-expr-outside-params)) |deployment().location|
 }
 
 module appPlanDeploy 'br:mock-registry-one.invalid/demo/plan:v2' = {
   name: 'planDeploy'
+  scope: rg
+  params: {
+    namePrefix: 'hello'
+  }
+}
+
+module appPlanDeploy2 'br/mock-registry-one:demo/plan:v2' = {
+  name: 'planDeploy2'
   scope: rg
   params: {
     namePrefix: 'hello'
@@ -35,8 +44,27 @@ module siteDeploy 'br:mock-registry-two.invalid/demo/site:v3' = [for site in web
   }
 }]
 
+module siteDeploy2 'br/demo-two:site:v3' = [for site in websites: {
+  name: '${site.name}siteDeploy2'
+  scope: rg
+  params: {
+    appPlanId: appPlanDeploy.outputs.planId
+    namePrefix: site.name
+    dockerImage: 'nginxdemos/hello'
+    dockerImageTag: site.tag
+  }
+}]
+
 module storageDeploy 'ts:00000000-0000-0000-0000-000000000000/test-rg/storage-spec:1.0' = {
   name: 'storageDeploy'
+  scope: rg
+  params: {
+    location: 'eastus'
+  }
+}
+
+module storageDeploy2 'ts/mySpecRG:storage-spec:1.0' = {
+  name: 'storageDeploy2'
   scope: rg
   params: {
     location: 'eastus'
@@ -54,7 +82,7 @@ var vnets = [
   }
 ]
 
-module vnetDeploy 'ts:management.azure.com/11111111-1111-1111-1111-111111111111/prod-rg/vnet-spec:v2' = [for vnet in vnets: {
+module vnetDeploy 'ts:11111111-1111-1111-1111-111111111111/prod-rg/vnet-spec:v2' = [for vnet in vnets: {
   name: '${vnet.name}Deploy'
   scope: rg
   params: {

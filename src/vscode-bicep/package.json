@@ -7,7 +7,7 @@
   "version": "0.0.0-placeholder",
   "publisher": "ms-azuretools",
   "icon": "icons/bicep-logo-256.png",
-  "preview": true,
+  "preview": false,
   "aiKey": "AIF-d9b70cd4-b9f9-4d70-929b-a071c400b217",
   "engines": {
     "vscode": "^1.52.0"
@@ -37,8 +37,10 @@
   "activationEvents": [
     "onLanguage:bicep",
     "onCommand:bicep.build",
-    "onCommand:bicep.openVisualizer",
-    "onCommand:bicep.openVisualizerToSide",
+    "onCommand:bicep.insertResource",
+    "onCommand:bicep.showSource",
+    "onCommand:bicep.showVisualizer",
+    "onCommand:bicep.showVisualizerToSide",
     "onWebviewPanel:bicep.visualizer"
   ],
   "main": "./out/extension",
@@ -136,13 +138,25 @@
         "command": "bicep.build",
         "title": "Build",
         "category": "Bicep"
+      },
+      {
+        "command": "bicep.insertResource",
+        "title": "Insert Resource",
+        "category": "Bicep"
       }
     ],
     "keybindings": [
       {
         "command": "bicep.build",
         "key": "ctrl+shift+b",
+        "mac": "cmd+alt+b",
         "when": "resourceLangId == bicep"
+      },
+      {
+        "command": "bicep.showVisualizerToSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "resourceLangId == bicep && commandsRegistered"
       }
     ],
     "menus": {
@@ -166,6 +180,11 @@
           "group": "navigation"
         },
         {
+          "command": "bicep.showVisualizerToSide",
+          "when": "resourceLangId == bicep && commandsRegistered",
+          "group": "navigation"
+        },
+        {
           "command": "bicep.build",
           "when": "resourceLangId == bicep && commandsRegistered",
           "group": "navigation"
@@ -178,14 +197,36 @@
           "group": "1_open"
         },
         {
+          "command": "bicep.showVisualizerToSide",
+          "when": "resourceLangId == bicep && commandsRegistered",
+          "group": "1_open"
+        },
+        {
           "command": "bicep.build",
           "when": "resourceLangId == bicep && commandsRegistered",
           "group": "1_build"
         }
       ],
+      "editor/context": [
+        {
+          "command": "bicep.showVisualizer",
+          "when": "resourceLangId == bicep && commandsRegistered",
+          "group": "1_open"
+        },
+        {
+          "command": "bicep.showVisualizerToSide",
+          "when": "resourceLangId == bicep && commandsRegistered",
+          "group": "1_open"
+        }
+      ],
       "commandPalette": [
         {
           "command": "bicep.build",
+          "when": "editorLangId == bicep && commandsRegistered",
+          "group": "navigation"
+        },
+        {
+          "command": "bicep.insertResource",
           "when": "editorLangId == bicep && commandsRegistered",
           "group": "navigation"
         },
@@ -224,56 +265,59 @@
   },
   "devDependencies": {
     "@types/copy-webpack-plugin": "^8.0.1",
-    "@types/cytoscape": "^3.14.17",
+    "@types/cytoscape": "^3.14.19",
+    "@types/fs-extra": "^9.0.13",
     "@types/jest": "^27.0.2",
-    "@types/mocha": "^9.0.0",
-    "@types/node": "^16.9.6",
-    "@types/react": "^17.0.24",
+    "@types/mocha": "^9.1.0",
+    "@types/node": "^17.0.12",
+    "@types/react": "^17.0.37",
     "@types/react-dom": "^17.0.9",
     "@types/react-test-renderer": "^17.0.1",
-    "@types/semver": "^7.3.8",
-    "@types/styled-components": "^5.1.14",
+    "@types/semver": "^7.3.9",
+    "@types/styled-components": "^5.1.21",
     "@types/triple-beam": "^1.3.2",
     "@types/vscode": "^1.52.0",
     "@types/webpack": "^5.28.0",
-    "@typescript-eslint/eslint-plugin": "^4.31.1",
+    "@typescript-eslint/eslint-plugin": "^4.33.0",
     "@typescript-eslint/parser": "^4.31.0",
     "copy-webpack-plugin": "^9.0.1",
-    "esbuild-loader": "^2.15.1",
+    "esbuild-loader": "^2.16.0",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-header": "^3.1.1",
-    "eslint-plugin-jest": "^24.4.0",
+    "eslint-plugin-jest": "^24.5.2",
     "eslint-plugin-prettier": "^4.0.0",
-    "eslint-plugin-react": "^7.26.1",
+    "eslint-plugin-react": "^7.28.0",
     "fork-ts-checker-webpack-plugin": "^6.3.3",
-    "jest": "^26.6.2",
+    "jest": "^27.3.1",
     "jest-styled-components": "^7.0.5",
     "ncp": "^2.0.0",
-    "nerdbank-gitversioning": "^3.4.231",
+    "nerdbank-gitversioning": "^3.4.244",
     "prettier": "^2.4.1",
     "react-test-renderer": "^17.0.2",
     "rimraf": "^3.0.2",
     "semver": "^7.3.5",
     "svg-inline-loader": "^0.8.2",
-    "ts-jest": "^26.5.5",
+    "ts-jest": "^27.0.7",
     "ts-node": "^10.2.1",
     "typescript": "^4.3.5",
     "vsce": "^1.99.0",
     "vscode-test": "^1.6.1",
-    "webpack": "^5.52.1",
+    "webpack": "^5.65.0",
     "webpack-cli": "^4.8.0"
   },
   "dependencies": {
-    "cytoscape": "^3.19.1",
+    "cytoscape": "^3.20.0",
     "cytoscape-elk": "^2.0.2",
+    "fs-extra": "^10.0.0",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
+    "react-icons": "^4.3.1",
     "styled-components": "^5.3.1",
     "triple-beam": "^1.3.0",
-    "vscode-azureextensionui": "^0.48.0",
+    "vscode-azureextensionui": "^0.49.2",
     "vscode-languageclient": "^7.0.0",
-    "winston": "^3.3.3",
+    "winston": "^3.5.1",
     "winston-transport": "^4.4.0"
   },
   "extensionDependencies": [

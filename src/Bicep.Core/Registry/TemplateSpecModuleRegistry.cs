@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
@@ -13,30 +14,29 @@ using Bicep.Core.Tracing;
 
 namespace Bicep.Core.Registry
 {
-    public class TemplateSpecModuleRegistry : ModuleRegistry<TemplateSpecModuleReference>
+    public class TemplateSpecModuleRegistry : ExternalModuleRegistry<TemplateSpecModuleReference, TemplateSpecEntity>
     {
-        private readonly IFileResolver fileResolver;
         private readonly ITemplateSpecRepositoryFactory repositoryFactory;
         private readonly IFeatureProvider featureProvider;
 
         public TemplateSpecModuleRegistry(IFileResolver fileResolver, ITemplateSpecRepositoryFactory repositoryFactory, IFeatureProvider featureProvider)
+            : base(fileResolver)
         {
-            this.fileResolver = fileResolver;
             this.repositoryFactory = repositoryFactory;
             this.featureProvider = featureProvider;
         }
 
         public override string Scheme => ModuleReferenceSchemes.TemplateSpecs;
 
-        public override RegistryCapabilities Capabilities => RegistryCapabilities.Default;
+        public override RegistryCapabilities GetCapabilities(TemplateSpecModuleReference reference) => RegistryCapabilities.Default;
 
-        public override ModuleReference? TryParseModuleReference(string reference, out DiagnosticBuilder.ErrorBuilderDelegate? failureBuilder) =>
-            TemplateSpecModuleReference.TryParse(reference, out failureBuilder);
+        public override ModuleReference? TryParseModuleReference(string? aliasName, string reference, RootConfiguration configuration, out DiagnosticBuilder.ErrorBuilderDelegate? failureBuilder) =>
+            TemplateSpecModuleReference.TryParse(aliasName, reference, configuration, out failureBuilder);
 
         public override bool IsModuleRestoreRequired(TemplateSpecModuleReference reference) =>
-            !this.fileResolver.FileExists(this.GetModuleEntryPointUri(reference));
+            !this.FileResolver.FileExists(this.GetModuleEntryPointUri(reference));
 
-        public override Task PublishModule(TemplateSpecModuleReference reference, Stream compiled) => throw new NotSupportedException("Template Spec modules cannot be published.");
+        public override Task PublishModule(RootConfiguration configuration, TemplateSpecModuleReference reference, Stream compiled) => throw new NotSupportedException("Template Spec modules cannot be published.");
 
         public override Uri? TryGetLocalModuleEntryPointUri(Uri? parentModuleUri, TemplateSpecModuleReference reference, out DiagnosticBuilder.ErrorBuilderDelegate? failureBuilder)
         {
@@ -44,7 +44,7 @@ namespace Bicep.Core.Registry
             return this.GetModuleEntryPointUri(reference);
         }
 
-        public override async Task<IDictionary<ModuleReference, DiagnosticBuilder.ErrorBuilderDelegate>> RestoreModules(IEnumerable<TemplateSpecModuleReference> references)
+        public override async Task<IDictionary<ModuleReference, DiagnosticBuilder.ErrorBuilderDelegate>> RestoreModules(RootConfiguration configuration, IEnumerable<TemplateSpecModuleReference> references)
         {
             var statuses = new Dictionary<ModuleReference, DiagnosticBuilder.ErrorBuilderDelegate>();
 
@@ -53,12 +53,12 @@ namespace Bicep.Core.Registry
                 using var timer = new ExecutionTimer($"Restore module {reference.FullyQualifiedReference}");
                 try
                 {
-                    var repository = this.repositoryFactory.CreateRepository(reference.EndpointUri, reference.SubscriptionId);
+                    var repository = this.repositoryFactory.CreateRepository(configuration, reference.SubscriptionId);
                     var templateSpecEntity = await repository.FindTemplateSpecByIdAsync(reference.TemplateSpecResourceId);
 
-                    await this.SaveModuleToDisk(reference, templateSpecEntity);
+                    await this.TryWriteModuleContentAsync(reference, templateSpecEntity);
                 }
-                catch (TemplateSpecException templateSpecException)
+                catch (ExternalModuleException templateSpecException)
                 {
                     statuses.Add(reference, x => x.ModuleRestoreFailedWithMessage(reference.FullyQualifiedReference, templateSpecException.Message));
                     timer.OnFail(templateSpecException.Message);
@@ -81,7 +81,10 @@ namespace Bicep.Core.Registry
             return statuses;
         }
 
-        private string GetModuleDirectoryPath(TemplateSpecModuleReference reference) => Path.Combine(
+        protected override void WriteModuleContent(TemplateSpecModuleReference reference, TemplateSpecEntity entity) =>
+            File.WriteAllText(this.GetModuleEntryPointPath(reference), entity.ToUtf8Json());
+
+        protected override string GetModuleDirectoryPath(TemplateSpecModuleReference reference) => Path.Combine(
             this.featureProvider.CacheRootDirectory,
             this.Scheme,
             reference.SubscriptionId.ToLowerInvariant(),
@@ -89,24 +92,10 @@ namespace Bicep.Core.Registry
             reference.TemplateSpecName.ToLowerInvariant(),
             reference.Version.ToLowerInvariant());
 
+        protected override Uri GetModuleLockFileUri(TemplateSpecModuleReference reference) => new(Path.Combine(this.GetModuleDirectoryPath(reference), "lock"), UriKind.Absolute);
+
         private string GetModuleEntryPointPath(TemplateSpecModuleReference reference) => Path.Combine(this.GetModuleDirectoryPath(reference), "main.json");
 
         private Uri GetModuleEntryPointUri(TemplateSpecModuleReference reference) => new(this.GetModuleEntryPointPath(reference), UriKind.Absolute);
-
-        private async Task SaveModuleToDisk(TemplateSpecModuleReference reference, TemplateSpecEntity templateSpecEntity)
-        {
-            var moduleDirectoryPath = this.GetModuleDirectoryPath(reference);
-
-            try
-            {
-                Directory.CreateDirectory(moduleDirectoryPath);
-            }
-            catch (Exception exception)
-            {
-                throw new TemplateSpecException($"Unable to create the local module directory \"{moduleDirectoryPath}\".", exception);
-            }
-
-            await File.WriteAllTextAsync(this.GetModuleEntryPointPath(reference), templateSpecEntity.ToUtf8Json());
-        }
     }
 }

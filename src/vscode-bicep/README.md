@@ -1,12 +1,12 @@
 # Key features of the Bicep VS Code extension
 
-The [bicep VS Code extension](/docs/installing.md#install-the-bicep-vs-code-extension) is capable of many of the features you would expect out of other language tooling. Here is a comprehensive list of the features that are currently implemented.
+The [Bicep VS Code extension](https://docs.microsoft.com/azure/azure-resource-manager/bicep/install#vs-code-and-bicep-extension) is capable of many of the features you would expect out of other language tooling. Here is a comprehensive list of the features that are currently implemented.
 
 ## Validation
 
 The bicep compiler validates that your code is authored correctly. We always validate the syntax of each file and whenever possible also validate the return types of all expressions (functions, resource bodies, parameters, outputs, etc.). Depending on the type of validation, you will see either a warning in yellow which will successfully compile with `bicep build` or you will see an error in red which will fail to compile either. Bicep is more restrictive than ARM Templates, so certain behaviors in ARM Templates that you have used may not be supported and result in an error in bicep. For example, we no longer allow math functions like `add()` because we support the `+` operator.
 
-See [Bicep Type System](/docs/spec/types.md) for more information about Bicep data types and the type validation rules.
+See [Bicep Type System](https://docs.microsoft.com/azure/azure-resource-manager/bicep/data-types) for more information about Bicep data types and the type validation rules.
 
 ## Intellisense
 
@@ -38,7 +38,7 @@ Easily explore all available resource types and api versions for a given type. Y
 
 ### Snippets
 
-Bicep has a small set of snippets for core language keywords (`param`, `var`, `resource`, `module`, `output`). The snippets are contextual, so they should only show up in the places they are valid. We plan to convert all of the ARM Template resource snippets that are used by the ARM Tools VS Code extension into bicep snippets.
+Bicep has a small set of snippets for core language keywords (`param`, `var`, `resource`, `module`, `output`). The snippets are contextual, so they should only show up in the places they are valid. All of the ARM Template resource snippets available in the ARM Tools VS Code extension are available as bicep resource snippets.
 
 ![snippets for top level keywords](/docs/images/snippets.gif)
 
@@ -103,3 +103,11 @@ You can change the default settings in the following places (sorted by precedenc
 For small issues like misspelled symbols or incorrect casing, bicep will offer a "Quick fix" to fix it for you.
 
 ![correcting a spelling error with "quick fix"](/docs/images/quick-fix.gif)
+
+## Commands
+
+### Insert Resource
+
+Use the "Insert Resource" command to quickly import a resource from Azure into a Bicep file.
+
+![Insert resource command](/src/vscode-bicep/readme-links/insertresource.gif)

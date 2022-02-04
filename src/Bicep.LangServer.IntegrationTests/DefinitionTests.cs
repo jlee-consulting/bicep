@@ -25,6 +25,7 @@ using System;
 using OmniSharp.Extensions.LanguageServer.Protocol.Client;
 using Bicep.Core.Text;
 using Bicep.Core.UnitTests;
+using Bicep.Core.Navigation;
 
 namespace Bicep.LangServer.IntegrationTests
 {
@@ -41,7 +42,8 @@ namespace Bicep.LangServer.IntegrationTests
         {
             var (compilation, _, fileUri) = await dataSet.SetupPrerequisitesAndCreateCompilation(TestContext);
             var uri = DocumentUri.From(fileUri);
-            using var client = await IntegrationTestHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri);
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri);
+            var client = helper.Client;
             var symbolTable = compilation.ReconstructSymbolTable();
             var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
 
@@ -50,7 +52,7 @@ namespace Bicep.LangServer.IntegrationTests
             // which makes it impossible to go to definition on a local with invalid identifiers)
             var declaredSymbolBindings = symbolTable
                 .Where(pair => pair.Value is DeclaredSymbol && (pair.Value is not LocalVariableSymbol local || local.NameSyntax.IsValid))
-                .Select(pair => new KeyValuePair<SyntaxBase, DeclaredSymbol>(pair.Key, (DeclaredSymbol) pair.Value));
+                .Select(pair => new KeyValuePair<SyntaxBase, DeclaredSymbol>(pair.Key, (DeclaredSymbol)pair.Value));
 
             foreach (var (syntax, symbol) in declaredSymbolBindings)
             {
@@ -71,8 +73,21 @@ namespace Bicep.LangServer.IntegrationTests
                 // selection range should be the span of the identifier of the symbol
                 link.TargetSelectionRange.Should().Be(symbol.NameSyntax.Span.ToRange(lineStarts));
 
-                // origin selection range should be the span of the syntax node that references the symbol
-                link.OriginSelectionRange.Should().Be(syntax.ToRange(lineStarts));
+                if (syntax is ParameterDeclarationSyntax parameterSyntax)
+                {
+                    // we only underline the key of the param declaration syntax
+                    link.OriginSelectionRange.Should().Be(parameterSyntax.Name.ToRange(lineStarts));
+                }
+                else if (syntax is ITopLevelNamedDeclarationSyntax namedSyntax)
+                {
+                    // Instead of underlining everything, we only underline the resource name
+                    link.OriginSelectionRange.Should().Be(namedSyntax.Name.ToRange(lineStarts));
+                }
+                else
+                {
+                    // origin selection range should be the span of the syntax node that references the symbol
+                    link.OriginSelectionRange.Should().Be(syntax.ToRange(lineStarts));
+                }
             }
         }
 
@@ -82,7 +97,8 @@ namespace Bicep.LangServer.IntegrationTests
         {
             var uri = DocumentUri.From($"/{dataSet.Name}");
 
-            using var client = await IntegrationTestHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri);
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri);
+            var client = helper.Client;
             var (compilation, _, _) = await dataSet.SetupPrerequisitesAndCreateCompilation(TestContext);
             var symbolTable = compilation.ReconstructSymbolTable();
             var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
@@ -115,7 +131,8 @@ namespace Bicep.LangServer.IntegrationTests
 
             var (compilation, _, fileUri) = await dataSet.SetupPrerequisitesAndCreateCompilation(TestContext);
             var uri = DocumentUri.From(fileUri);
-            using var client = await IntegrationTestHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri);
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri);
+            var client = helper.Client;
             var symbolTable = compilation.ReconstructSymbolTable();
             var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
 
@@ -184,7 +201,8 @@ module appPlanDeploy2 'wrong|.bicep' = {
             var (file, cursors) = ParserHelper.GetFileWithCursors(fileWithCursors);
             var bicepFile = SourceFileFactory.CreateBicepFile(new Uri("file:///path/to/main.bicep"), file);
 
-            var client = await IntegrationTestHelper.StartServerWithTextAsync(testContext, file, bicepFile.FileUri, creationOptions: new LanguageServer.Server.CreationOptions(NamespaceProvider: BuiltInTestTypes.Create()));
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(testContext, file, bicepFile.FileUri, creationOptions: new LanguageServer.Server.CreationOptions(NamespaceProvider: BuiltInTestTypes.Create()));
+            var client = helper.Client;
             var results = await RequestDefinitions(client, bicepFile, cursors);
 
             assertAction(results);
@@ -212,8 +230,8 @@ module appPlanDeploy2 'wrong|.bicep' = {
             // Module path
             return index > 1
             && accumulated[index] is StringSyntax
-            && accumulated[index-1] is IdentifierSyntax
-            && accumulated[index-2] is ModuleDeclarationSyntax;
+            && accumulated[index - 1] is IdentifierSyntax
+            && accumulated[index - 2] is ModuleDeclarationSyntax;
         }
 
         private static LocationLink ValidateDefinitionResponse(LocationOrLocationLinks response)

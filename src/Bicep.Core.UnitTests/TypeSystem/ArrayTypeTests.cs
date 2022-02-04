@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
 using Bicep.Core.TypeSystem;
@@ -20,12 +20,12 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void ArraysOfCompoundTypesShouldHaveExpectedDisplayString()
         {
-            Create(UnionType.Create(new StringLiteralType("one"), new StringLiteralType("two"))).Name.Should().Be("('one' | 'two')[]");
+            Create(TypeHelper.CreateTypeUnion(new StringLiteralType("one"), new StringLiteralType("two"))).Name.Should().Be("('one' | 'two')[]");
 
-            Create(UnionType.Create(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup), new StringLiteralType("test"))).Name
+            Create(TypeHelper.CreateTypeUnion(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup), new StringLiteralType("test"))).Name
                 .Should().Be("('test' | managementGroup)[]");
 
-            Create(UnionType.Create(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup | ResourceScope.Tenant), new StringLiteralType("test"))).Name
+            Create(TypeHelper.CreateTypeUnion(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup | ResourceScope.Tenant), new StringLiteralType("test"))).Name
                 .Should().Be("('test' | (tenant | managementGroup))[]");
         }
 

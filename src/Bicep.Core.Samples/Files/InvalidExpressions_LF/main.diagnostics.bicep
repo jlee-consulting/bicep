@@ -146,11 +146,16 @@ var div = {
 
 // additive
 var add = null + 's'
+//@[4:7) [BCP028 (Error)] Identifier "add" is declared multiple times. Remove or rename the duplicates. (CodeDescription: none) |add|
 //@[4:7) [no-unused-vars (Warning)] Variable "add" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |add|
 //@[10:20) [BCP045 (Error)] Cannot apply operator "+" to operands of type "null" and "'s'". (CodeDescription: none) |null + 's'|
 var sub = true - false
 //@[4:7) [no-unused-vars (Warning)] Variable "sub" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |sub|
 //@[10:22) [BCP045 (Error)] Cannot apply operator "-" to operands of type "bool" and "bool". (CodeDescription: none) |true - false|
+var add = 'bad' + 'str'
+//@[4:7) [BCP028 (Error)] Identifier "add" is declared multiple times. Remove or rename the duplicates. (CodeDescription: none) |add|
+//@[4:7) [no-unused-vars (Warning)] Variable "add" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |add|
+//@[10:23) [BCP045 (Error)] Cannot apply operator "+" to operands of type "'bad'" and "'str'". Use string interpolation instead. (CodeDescription: none) |'bad' + 'str'|
 
 // equality (== and != can't have a type error because they work on "any" type)
 var eq = true =~ null
@@ -309,7 +314,7 @@ var fakeVar = concat(totallyFakeVar, 's')
 // bad functions arguments
 var concatNotEnough = concat()
 //@[4:19) [no-unused-vars (Warning)] Variable "concatNotEnough" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |concatNotEnough|
-//@[28:30) [BCP071 (Error)] Expected as least 1 argument, but got 0. (CodeDescription: none) |()|
+//@[28:30) [BCP071 (Error)] Expected at least 1 argument, but got 0. (CodeDescription: none) |()|
 var padLeftNotEnough = padLeft('s')
 //@[4:20) [no-unused-vars (Warning)] Variable "padLeftNotEnough" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |padLeftNotEnough|
 //@[30:35) [BCP071 (Error)] Expected 2 to 3 arguments, but got 1. (CodeDescription: none) |('s')|
@@ -440,6 +445,9 @@ var invalidPropertyAccessOnSysNamespace = sys.az
 var invalidOperands = 1 + az
 //@[4:19) [no-unused-vars (Warning)] Variable "invalidOperands" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |invalidOperands|
 //@[22:28) [BCP045 (Error)] Cannot apply operator "+" to operands of type "int" and "az". (CodeDescription: none) |1 + az|
+var invalidStringAddition = 'hello' + sampleObject.myStr
+//@[4:25) [no-unused-vars (Warning)] Variable "invalidStringAddition" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |invalidStringAddition|
+//@[28:56) [BCP045 (Error)] Cannot apply operator "+" to operands of type "'hello'" and "'s'". Use string interpolation instead. (CodeDescription: none) |'hello' + sampleObject.myStr|
 
 var bannedFunctions = {
 //@[4:19) [no-unused-vars (Warning)] Variable "bannedFunctions" is declared but never used. (CodeDescription: bicep core(https://aka.ms/bicep/linter/no-unused-vars)) |bannedFunctions|
@@ -448,7 +456,7 @@ var bannedFunctions = {
   param: parameters() + 2
 //@[9:19) [BCP061 (Error)] The "parameters" function is not supported. Directly reference parameters by their symbolic names. (CodeDescription: none) |parameters|
   if: sys.if(null,null)
-//@[10:12) [BCP100 (Error)] The "if" function is not supported. Use the ternary conditional operator instead. (CodeDescription: none) |if|
+//@[10:12) [BCP100 (Error)] The function "if" is not supported. Use the "?:" (ternary conditional) operator instead, e.g. condition ? ValueIfTrue : ValueIfFalse (CodeDescription: none) |if|
   obj: sys.createArray()
 //@[11:22) [BCP101 (Error)] The "createArray" function is not supported. Construct an array literal using []. (CodeDescription: none) |createArray|
   arr: sys.createObject()

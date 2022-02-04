@@ -1,17 +1,20 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using Bicep.Core.Analyzers.Linter;
 using Bicep.Core.Configuration;
 using Bicep.Core.Emit;
 using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
+using Bicep.Core.Registry.Auth;
 using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.Tracing;
 using Bicep.Core.TypeSystem.Az;
 using Bicep.Core.Workspaces;
 using Bicep.LanguageServer.CompilationManager;
 using Bicep.LanguageServer.Completions;
+using Bicep.LanguageServer.Configuration;
 using Bicep.LanguageServer.Extensions;
 using Bicep.LanguageServer.Handlers;
 using Bicep.LanguageServer.Providers;
@@ -33,27 +36,19 @@ using OmnisharpLanguageServer = OmniSharp.Extensions.LanguageServer.Server.Langu
 
 namespace Bicep.LanguageServer
 {
-    public class Server
+    public class Server : IDisposable
     {
         public record CreationOptions(
             ISnippetsProvider? SnippetsProvider = null,
             INamespaceProvider? NamespaceProvider = null,
             IFileResolver? FileResolver = null,
-            IFeatureProvider? Features = null);
+            IFeatureProvider? Features = null,
+            IModuleRestoreScheduler? ModuleRestoreScheduler = null,
+            Action<IServiceCollection>? onRegisterServices = null);
 
         private readonly OmnisharpLanguageServer server;
 
-        public Server(PipeReader input, PipeWriter output, CreationOptions creationOptions)
-            : this(creationOptions, options => options.WithInput(input).WithOutput(output))
-        {
-        }
-
-        public Server(Stream input, Stream output, CreationOptions creationOptions)
-            : this(creationOptions, options => options.WithInput(input).WithOutput(output))
-        {
-        }
-        
-        private Server(CreationOptions creationOptions, Action<LanguageServerOptions> onOptionsFunc)
+        public Server(CreationOptions creationOptions, Action<LanguageServerOptions> onOptionsFunc)
         {
             BicepDeploymentsInterop.Initialize();
             server = OmnisharpLanguageServer.PreInit(options =>
@@ -71,13 +66,15 @@ namespace Bicep.LanguageServer
                     .WithHandler<BicepCompletionHandler>()
                     .WithHandler<BicepCodeActionHandler>()
                     .WithHandler<BicepDidChangeWatchedFilesHandler>()
-                    .WithHandler<BicepDisableLinterRuleCommandHandler>()
                     .WithHandler<BicepSignatureHelpHandler>()
                     .WithHandler<BicepSemanticTokensHandler>()
                     .WithHandler<BicepTelemetryHandler>()
                     .WithHandler<BicepBuildCommandHandler>()
                     .WithHandler<BicepRegistryCacheRequestHandler>()
+                    .WithHandler<InsertResourceHandler>()
                     .WithServices(services => RegisterServices(creationOptions, services));
+
+                creationOptions.onRegisterServices?.Invoke(options.Services);
 
                 onOptionsFunc(options);
             });
@@ -119,13 +116,22 @@ namespace Bicep.LanguageServer
             services.AddSingleton<IModuleDispatcher, ModuleDispatcher>();
             services.AddSingleton<IFileSystem, FileSystem>();
             services.AddSingleton<IConfigurationManager, ConfigurationManager>();
+            services.AddSingleton<ITokenCredentialFactory, TokenCredentialFactory>();
             services.AddSingleton<ITelemetryProvider, TelemetryProvider>();
             services.AddSingleton<IWorkspace, Workspace>();
             services.AddSingleton<ICompilationManager, BicepCompilationManager>();
             services.AddSingleton<ICompilationProvider, BicepCompilationProvider>();
             services.AddSingleton<ISymbolResolver, BicepSymbolResolver>();
             services.AddSingleton<ICompletionProvider, BicepCompletionProvider>();
-            services.AddSingleton<IModuleRestoreScheduler, ModuleRestoreScheduler>();
+            services.AddSingletonOrInstance<IModuleRestoreScheduler, ModuleRestoreScheduler>(creationOptions.ModuleRestoreScheduler);
+            services.AddSingleton<IAzResourceProvider, AzResourceProvider>();
+            services.AddSingleton<ILinterRulesProvider, LinterRulesProvider>();
+            services.AddSingleton<IBicepConfigChangeHandler, BicepConfigChangeHandler>();
+        }
+
+        public void Dispose()
+        {
+            server.Dispose();
         }
     }
 }

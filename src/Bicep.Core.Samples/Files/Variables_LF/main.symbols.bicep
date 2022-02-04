@@ -119,6 +119,8 @@ var anyIndexOnAny = any(true)[any(false)]
 
 var deploymentName = deployment().name
 //@[4:18) Variable deploymentName. Type: string. Declaration start char: 0, length: 38
+var templateContentVersion = deployment().properties.template.contentVersion
+//@[4:26) Variable templateContentVersion. Type: string. Declaration start char: 0, length: 76
 var templateLinkUri = deployment().properties.templateLink.uri
 //@[4:19) Variable templateLinkUri. Type: string. Declaration start char: 0, length: 62
 var templateLinkId = deployment().properties.templateLink.id
@@ -310,10 +312,16 @@ var someText = isTrue ? sys.concat('a', sys.concat('b', 'c')) : 'someText'
 
 // Bicep functions that cannot be converted into ARM functions
 var scopesWithoutArmRepresentation = {
-//@[4:34) Variable scopesWithoutArmRepresentation. Type: object. Declaration start char: 0, length: 214
-  tenant: tenant()
+//@[4:34) Variable scopesWithoutArmRepresentation. Type: object. Declaration start char: 0, length: 195
   subscription: subscription('10b57a01-6350-4ce2-972a-6a13642f00bf')
   resourceGroup: az.resourceGroup('10b57a01-6350-4ce2-972a-6a13642f00bf', 'myRgName')
+}
+
+var scopesWithArmRepresentation = {
+//@[4:31) Variable scopesWithArmRepresentation. Type: object. Declaration start char: 0, length: 123
+  tenant: tenant()
+  subscription: subscription()
+  resourceGroup: az.resourceGroup()
 }
 
 // Issue #1332

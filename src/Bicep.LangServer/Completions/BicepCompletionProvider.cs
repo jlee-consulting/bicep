@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using Azure.Deployments.Core.Comparers;
 using Bicep.Core;
+using Bicep.Core.Diagnostics;
 using Bicep.Core.Emit;
 using Bicep.Core.Extensions;
 using Bicep.Core.Features;
@@ -16,11 +17,13 @@ using Bicep.Core.Parsing;
 using Bicep.Core.Resources;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
+using Bicep.Core.Text;
 using Bicep.Core.TypeSystem;
 using Bicep.Core.Workspaces;
 using Bicep.LanguageServer.Extensions;
 using Bicep.LanguageServer.Snippets;
 using Bicep.LanguageServer.Telemetry;
+using Bicep.LanguageServer.Utils;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 using SymbolKind = Bicep.Core.Semantics.SymbolKind;
@@ -70,7 +73,11 @@ namespace Bicep.LanguageServer.Completions
                 .Concat(GetVariableValueCompletions(context))
                 .Concat(GetOutputValueCompletions(model, context))
                 .Concat(GetTargetScopeCompletions(model, context))
-                .Concat(GetImportCompletions(model, context));
+                .Concat(GetImportCompletions(model, context))
+                .Concat(GetFunctionParamCompletions(model, context))
+                .Concat(GetExpressionCompletions(model, context))
+                .Concat(GetDisableNextLineDiagnosticsDirectiveCompletion(context))
+                .Concat(GetDisableNextLineDiagnosticsDirectiveCodesCompletion(model, context));
         }
 
         private IEnumerable<CompletionItem> GetDeclarationCompletions(SemanticModel model, BicepCompletionContext context)
@@ -201,22 +208,22 @@ namespace Bicep.LanguageServer.Completions
             if (context.EnclosingDeclaration is SyntaxBase &&
                 model.Binder.GetNearestAncestor<ResourceDeclarationSyntax>(context.EnclosingDeclaration) is ResourceDeclarationSyntax parentSyntax &&
                 model.GetSymbolInfo(parentSyntax) is ResourceSymbol parentSymbol &&
-                parentSymbol.TryGetResourceTypeReference() is ResourceTypeReference parentTypeReference)
+                parentSymbol.TryGetResourceType() is { } parentResourceType)
             {
                 // This is more complex because we allow the API version to be omitted, so we want to make a list of unique values
                 // for the FQT, and then create a "no version" completion + a completion for each version.
-                var filtered = model.Binder.NamespaceResolver.GetAvailableResourceTypes()
-                    .Where(rt => parentTypeReference.IsParentOf(rt))
-                    .ToLookup(rt => rt.FullyQualifiedType);
+                var filtered = parentResourceType.DeclaringNamespace.ResourceTypeProvider.GetAvailableTypes()
+                    .Where(rt => parentResourceType.TypeReference.IsParentOf(rt))
+                    .ToLookup(rt => rt.FormatType());
 
                 var index = 0;
                 var items = new List<CompletionItem>();
                 foreach (var group in filtered.OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
                 {
                     // Doesn't matter which one of the group we take, we're leaving out the version.
-                    items.Add(CreateResourceTypeSegmentCompletion(group.First(), index++, context.ReplacementRange, includeApiVersion: false, displayApiVersion: parentTypeReference.ApiVersion));
+                    items.Add(CreateResourceTypeSegmentCompletion(group.First(), index++, context.ReplacementRange, includeApiVersion: false, displayApiVersion: parentResourceType.TypeReference.ApiVersion));
 
-                    foreach (var resourceType in group.OrderByDescending(rt => rt.ApiVersion, ApiVersionComparer.Instance))
+                    foreach (var resourceType in group.Where(rt => rt.ApiVersion is not null).OrderByDescending(rt => rt.ApiVersion, ApiVersionComparer.Instance))
                     {
                         items.Add(CreateResourceTypeSegmentCompletion(resourceType, index++, context.ReplacementRange, includeApiVersion: true, displayApiVersion: resourceType.ApiVersion));
                     }
@@ -230,13 +237,13 @@ namespace Bicep.LanguageServer.Completions
             if (context.EnclosingDeclaration is ResourceDeclarationSyntax declarationSyntax
                 && declarationSyntax.Type is StringSyntax stringSyntax
                 && stringSyntax.TryGetLiteralValue() is string entered
-                && ResourceTypeReference.IsNamespaceAndTypeSegment(entered))
+                && ResourceTypeReference.HasResourceTypePrefix(entered))
             {
                 // newest api versions should be shown first
                 // strict filtering on type so that we show api versions for only the selected type
                 return model.Binder.NamespaceResolver.GetAvailableResourceTypes()
-                    .Where(rt => StringComparer.OrdinalIgnoreCase.Equals(entered.Split('@')[0], rt.FullyQualifiedType))
-                    .OrderBy(rt => rt.FullyQualifiedType, StringComparer.OrdinalIgnoreCase)
+                    .Where(rt => StringComparer.OrdinalIgnoreCase.Equals(entered.Split('@')[0], rt.FormatType()))
+                    .OrderBy(rt => rt.FormatType(), StringComparer.OrdinalIgnoreCase)
                     .ThenByDescending(rt => rt.ApiVersion, ApiVersionComparer.Instance)
                     .Select((reference, index) => CreateResourceTypeCompletion(reference, index, context.ReplacementRange, showApiVersion: true))
                     .ToList();
@@ -247,9 +254,9 @@ namespace Bicep.LanguageServer.Completions
             // we still order by apiVersion first to have consistent indexes
             return model.Binder.NamespaceResolver.GetAvailableResourceTypes()
                 .OrderByDescending(rt => rt.ApiVersion, ApiVersionComparer.Instance)
-                .GroupBy(rt => rt.FullyQualifiedType)
+                .GroupBy(rt => rt.FormatType())
                 .Select(rt => rt.First())
-                .OrderBy(rt => rt.FullyQualifiedType, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(rt => rt.FormatType(), StringComparer.OrdinalIgnoreCase)
                 .Select((reference, index) => CreateResourceTypeCompletion(reference, index, context.ReplacementRange, showApiVersion: false))
                 .ToList();
         }
@@ -259,7 +266,7 @@ namespace Bicep.LanguageServer.Completions
             if (context.Kind.HasFlag(BicepCompletionContextKind.ResourceTypeFollower))
             {
                 // Only when there is no existing assignment sign
-                if (context.EnclosingDeclaration is ResourceDeclarationSyntax { Assignment: SkippedTriviaSyntax { Elements: { IsDefaultOrEmpty: true }} })
+                if (context.EnclosingDeclaration is ResourceDeclarationSyntax { Assignment: SkippedTriviaSyntax { Elements: { IsDefaultOrEmpty: true } } })
                 {
                     const string equals = "=";
                     yield return CreateOperatorCompletion(equals, context.ReplacementRange, preselect: true);
@@ -463,7 +470,7 @@ namespace Bicep.LanguageServer.Completions
         {
             if (model.GetDeclaredType(resourceDeclarationSyntax)?.UnwrapArrayType() is ResourceType resourceType)
             {
-                var isResourceNested = model.Binder.GetNearestAncestor<ResourceDeclarationSyntax>(resourceDeclarationSyntax) is {};
+                var isResourceNested = model.Binder.GetNearestAncestor<ResourceDeclarationSyntax>(resourceDeclarationSyntax) is { };
                 var snippets = SnippetsProvider.GetResourceBodyCompletionSnippets(resourceType, resourceDeclarationSyntax.IsExistingResource(), isResourceNested);
 
                 foreach (Snippet snippet in snippets)
@@ -812,6 +819,21 @@ namespace Bicep.LanguageServer.Completions
             return GetValueCompletionsForType(arrayType.Item.Type, context.ReplacementRange, loopsAllowed: false);
         }
 
+        private IEnumerable<CompletionItem> GetFunctionParamCompletions(SemanticModel model, BicepCompletionContext context)
+        {
+            if (!context.Kind.HasFlag(BicepCompletionContextKind.FunctionArgument) ||
+                context.FunctionCall is not { } functionCall ||
+                model.GetSymbolInfo(functionCall) is not FunctionSymbol functionSymbol)
+            {
+                return Enumerable.Empty<CompletionItem>();
+            }
+
+            var argIndex = context.FunctionArgument is null ? 0 : functionCall.Arguments.IndexOf(context.FunctionArgument);
+            var argType = functionSymbol.GetDeclaredArgumentType(argIndex);
+
+            return GetValueCompletionsForType(argType, context.ReplacementRange, loopsAllowed: false);
+        }
+
         private IEnumerable<CompletionItem> GetValueCompletionsForType(TypeSymbol? type, Range replacementRange, bool loopsAllowed)
         {
             switch (type)
@@ -892,11 +914,95 @@ namespace Bicep.LanguageServer.Completions
             }
         }
 
+        private IEnumerable<CompletionItem> GetExpressionCompletions(SemanticModel model, BicepCompletionContext context)
+        {
+            if (context.Kind.HasFlag(BicepCompletionContextKind.Expression))
+            {
+                yield return CreateConditionCompletion(context.ReplacementRange);
+            }
+        }
+        
+        private IEnumerable<CompletionItem> GetDisableNextLineDiagnosticsDirectiveCompletion(BicepCompletionContext context)
+        {
+            if (context.Kind.HasFlag(BicepCompletionContextKind.DisableNextLineDiagnosticsDirectiveStart))
+            {
+                yield return CreateKeywordCompletion(LanguageConstants.DisableNextLineDiagnosticsKeyword, "Disable next line diagnostics directive", context.ReplacementRange);
+            }
+        }
+
+        private IEnumerable<CompletionItem> GetDisableNextLineDiagnosticsDirectiveCodesCompletion(SemanticModel model, BicepCompletionContext context)
+        {
+            if (context.Kind.HasFlag(BicepCompletionContextKind.DisableNextLineDiagnosticsCodes))
+            {
+                foreach (var diagnostic in GetDiagnosticCodes(context.ReplacementRange, model))
+                {
+                    yield return CreateKeywordCompletion(diagnostic.Code, diagnostic.Message, context.ReplacementRange);
+                }
+            }
+        }
+
+        private IEnumerable<IDiagnostic> GetDiagnosticCodes(Range range, SemanticModel model)
+        {
+            var lineStarts = model.SourceFile.LineStarts;
+            var position = GetPosition(range, lineStarts);
+            (var line, _) = TextCoordinateConverter.GetPosition(lineStarts, position);
+            var nextLineSpan = GetNextLineSpan(lineStarts, line, model.SourceFile.ProgramSyntax);
+
+            if (nextLineSpan is null)
+            {
+                return Enumerable.Empty<IDiagnostic>();
+            }
+
+            return model.GetAllDiagnostics()
+                .Where(diagnostic => nextLineSpan.ContainsInclusive(diagnostic.Span.Position) && diagnostic.CanBeSuppressed())
+                .DistinctBy(x => x.Code);
+        }
+
+        private int GetPosition(Range range, ImmutableArray<int> lineStarts)
+        {
+            var rangeStart = range.Start;
+            return lineStarts[rangeStart.Line] + rangeStart.Character;
+        }
+
+        private TextSpan? GetNextLineSpan(ImmutableArray<int> lineStarts, int line, ProgramSyntax programSyntax)
+        {
+            var nextLine = line + 1;
+            if (lineStarts.Length > nextLine)
+            {
+                var nextLineStart = lineStarts[nextLine];
+
+                int nextLineEnd;
+
+                if (lineStarts.Length > nextLine + 1)
+                {
+                    nextLineEnd = lineStarts[nextLine + 1] - 1;
+                }
+                else
+                {
+                    nextLineEnd = programSyntax.GetEndPosition();
+                }
+
+                return new TextSpan(nextLineStart, nextLineEnd - nextLineStart);
+            }
+
+            return null;
+        }
+        
         private static CompletionItem CreateResourceOrModuleConditionCompletion(Range replacementRange)
         {
             const string conditionLabel = "if";
             return CompletionItemBuilder.Create(CompletionItemKind.Snippet, conditionLabel)
                 .WithSnippetEdit(replacementRange, "if (${1:condition}) {\n\t$0\n}")
+                .WithDetail(conditionLabel)
+                .WithSortText(GetSortText(conditionLabel, CompletionPriority.High))
+                .Build();
+        }
+
+        private static CompletionItem CreateConditionCompletion(Range replacementRange)
+        {
+            const string conditionLabel = "if-else";
+            return CompletionItemBuilder.Create(CompletionItemKind.Snippet, conditionLabel)
+                .WithSnippetEdit(replacementRange, "${1:condition} ? ${2:TrueValue} : ${3:FalseValue}")
                 .WithDetail(conditionLabel)
                 .WithSortText(GetSortText(conditionLabel, CompletionPriority.High))
                 .Build();
@@ -1011,23 +1117,23 @@ namespace Bicep.LanguageServer.Completions
         private static CompletionItem CreateResourceTypeCompletion(ResourceTypeReference resourceType, int index, Range replacementRange, bool showApiVersion)
         {
             // Splitting ResourceType Completion in to two pieces, one for the 'Namespace/type', the second for '@<api-version>'
-            if (showApiVersion)
+            if (showApiVersion && resourceType.ApiVersion is not null)
             {
-                var insertText = StringUtils.EscapeBicepString($"{resourceType.FullyQualifiedType}@{resourceType.ApiVersion}");
+                var insertText = StringUtils.EscapeBicepString($"{resourceType.FormatType()}@{resourceType.ApiVersion}");
                 return CompletionItemBuilder.Create(CompletionItemKind.Class, resourceType.ApiVersion)
                     .WithFilterText(insertText)
                     .WithPlainTextEdit(replacementRange, insertText)
-                    .WithDocumentation($"Namespace: `{resourceType.Namespace}`{MarkdownNewLine}Type: `{resourceType.TypesString}`{MarkdownNewLine}API Version: `{resourceType.ApiVersion}`")
+                    .WithDocumentation($"Type: `{resourceType.FormatType()}`{MarkdownNewLine}API Version: `{resourceType.ApiVersion}`")
                     // 8 hex digits is probably overkill :)
                     .WithSortText(index.ToString("x8"))
                     .Build();
             }
             else
             {
-                var insertText = StringUtils.EscapeBicepString($"{resourceType.FullyQualifiedType}");
+                var insertText = StringUtils.EscapeBicepString($"{resourceType.FormatType()}");
                 return CompletionItemBuilder.Create(CompletionItemKind.Class, insertText)
                     .WithSnippetEdit(replacementRange, $"{insertText.Substring(0, insertText.Length - 1)}@$0'")
-                    .WithDocumentation($"Namespace: `{resourceType.Namespace}`{MarkdownNewLine}Type: `{resourceType.TypesString}`{MarkdownNewLine}`")
+                    .WithDocumentation($"Type: `{resourceType.FormatType()}`{MarkdownNewLine}`")
                     .WithCommand(new Command { Name = EditorCommands.RequestCompletions })
                     // 8 hex digits is probably overkill :)
                     .WithSortText(index.ToString("x8"))
@@ -1035,15 +1141,18 @@ namespace Bicep.LanguageServer.Completions
             }
         }
 
-        private static CompletionItem CreateResourceTypeSegmentCompletion(ResourceTypeReference resourceType, int index, Range replacementRange, bool includeApiVersion, string displayApiVersion)
+        private static CompletionItem CreateResourceTypeSegmentCompletion(ResourceTypeReference resourceType, int index, Range replacementRange, bool includeApiVersion, string? displayApiVersion)
         {
             // We create one completion with and without the API version.
-            var insertText = includeApiVersion ?
-                StringUtils.EscapeBicepString($"{resourceType.Types[^1]}@{resourceType.ApiVersion}") :
-                StringUtils.EscapeBicepString($"{resourceType.Types[^1]}");
+            var insertText = includeApiVersion && (resourceType.ApiVersion is not null) ?
+                StringUtils.EscapeBicepString($"{resourceType.TypeSegments[^1]}@{resourceType.ApiVersion}") :
+                StringUtils.EscapeBicepString($"{resourceType.TypeSegments[^1]}");
+
+            var apiVersionMarkdown = displayApiVersion is not null ? $"{MarkdownNewLine}API Version: `{displayApiVersion}`" : "";
+
             return CompletionItemBuilder.Create(CompletionItemKind.Class, insertText)
                 .WithPlainTextEdit(replacementRange, insertText)
-                .WithDocumentation($"Namespace: `{resourceType.Namespace}`{MarkdownNewLine}Type: `{resourceType.TypesString}`{MarkdownNewLine}API Version: `{displayApiVersion}`")
+                .WithDocumentation($"Type: `{resourceType.FormatType()}`{apiVersionMarkdown}")
                 // 8 hex digits is probably overkill :)
                 .WithSortText(index.ToString("x8"))
                 .Build();
@@ -1051,8 +1160,9 @@ namespace Bicep.LanguageServer.Completions
 
         private static CompletionItemBuilder CreateModulePathCompletionBuilder(string name, string path, Range replacementRange, CompletionItemKind completionItemKind, CompletionPriority priority)
         {
-            path = StringUtils.EscapeBicepString(path);
-            var item = CompletionItemBuilder.Create(completionItemKind, name)
+            // unescape string according to https://stackoverflow.com/questions/575440/url-encoding-using-c-sharp
+            path = StringUtils.EscapeBicepString(Uri.UnescapeDataString(path));
+            var item = CompletionItemBuilder.Create(completionItemKind, Uri.UnescapeDataString(name))
                 .WithFilterText(path)
                 .WithSortText(GetSortText(name, priority));
             // Folder completions should keep us within the completion string
@@ -1104,7 +1214,7 @@ namespace Bicep.LanguageServer.Completions
                 .WithDocumentation($"```bicep\n{new Snippet(snippet).FormatDocumentation()}\n```")
                 .WithSortText(GetSortText(label, priority))
                 .Build();
-
+        
         private static CompletionItem CreateSymbolCompletion(Symbol symbol, Range replacementRange, bool disableFollowUp = false, string? insertText = null)
         {
             insertText ??= symbol.Name;
@@ -1135,8 +1245,18 @@ namespace Bicep.LanguageServer.Completions
                     completion.WithCommand(new Command { Name = EditorCommands.SignatureHelp });
                 }
 
+                ImmutableArray<FunctionOverload> overloads = function.Overloads;
+                var genericDescription = overloads.First().GenericDescription;
+                var description = overloads.First().Description;
+                string codeBlock = string.Empty;
+
+                foreach (var overload in overloads)
+                {
+                    codeBlock = $"{codeBlock}{function.Name}{overload.TypeSignature}\n";
+                }
+
                 return completion
-                    .WithDetail($"{insertText}()")
+                    .WithDocumentation(MarkdownHelper.CodeBlockWithDescription(codeBlock, genericDescription.ToString()))
                     .WithSnippetEdit(replacementRange, snippet)
                     .Build();
             }
@@ -1159,12 +1279,12 @@ namespace Bicep.LanguageServer.Completions
 
         private IEnumerable<CompletionItem> GetImportCompletions(SemanticModel model, BicepCompletionContext context)
         {
-            if (context.Kind.HasFlag(BicepCompletionContextKind.ImportSymbolFollower))
+            if (context.Kind.HasFlag(BicepCompletionContextKind.ImportProviderFollower))
             {
-                yield return CreateKeywordCompletion(LanguageConstants.FromKeyword, "From keyword", context.ReplacementRange);
+                yield return CreateKeywordCompletion(LanguageConstants.AsKeyword, "As keyword", context.ReplacementRange);
             }
 
-            if (context.Kind.HasFlag(BicepCompletionContextKind.ImportFromFollower))
+            if (context.Kind.HasFlag(BicepCompletionContextKind.ImportFollower))
             {
                 foreach (var builtInNamespace in model.Root.Namespaces.OfType<BuiltInNamespaceSymbol>().OrderBy(x => x.Name, LanguageConstants.IdentifierComparer))
                 {

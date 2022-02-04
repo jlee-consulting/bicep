@@ -12,6 +12,7 @@ using Bicep.Core.Exceptions;
 using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
+using Bicep.Core.Registry.Auth;
 using Bicep.Core.Tracing;
 using Bicep.Core.TypeSystem.Az;
 using Bicep.Core.Utils;
@@ -50,7 +51,7 @@ namespace Bicep.Cli
             }
 
             // this event listener picks up SDK events and writes them to Trace.WriteLine()
-            using(FeatureProvider.TracingEnabled ? AzureEventSourceListenerFactory.Create(FeatureProvider.TracingVerbosity) : null)
+            using (FeatureProvider.TracingEnabled ? AzureEventSourceListenerFactory.Create(FeatureProvider.TracingVerbosity) : null)
             {
                 var program = new Program(new InvocationContext(
                     new AzResourceTypeLoader(),
@@ -121,6 +122,7 @@ namespace Bicep.Cli
                 .AddSingleton<IModuleRegistryProvider, DefaultModuleRegistryProvider>()
                 .AddSingleton<IFileSystem, FileSystem>()
                 .AddSingleton<IConfigurationManager, ConfigurationManager>()
+                .AddSingleton<ITokenCredentialFactory, TokenCredentialFactory>()
                 .AddSingleton<TemplateDecompiler>()
                 .AddSingleton<DecompilationWriter>()
                 .AddSingleton<CompilationWriter>()

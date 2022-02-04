@@ -62,5 +62,73 @@ namespace Bicep.LanguageServer.Telemetry
                     ["name"] = name
                 },
             };
+
+        public static BicepTelemetryEvent InsertResourceSuccess(string resourceType, string apiVersion)
+            => new BicepTelemetryEvent
+            {
+                EventName = "InsertResource/success",
+                Properties = new()
+                {
+                    ["resourceType"] = resourceType,
+                    ["apiVersion"] = apiVersion,
+                },
+            };
+
+        public static BicepTelemetryEvent InsertResourceFailure(string failureType)
+            => new BicepTelemetryEvent
+            {
+                EventName = "InsertResource/failure",
+                Properties = new()
+                {
+                    ["failureType"] = failureType,
+                },
+            };
+
+        public static BicepTelemetryEvent CreateDisableNextLineDiagnostics(string code)
+            => new BicepTelemetryEvent
+            {
+                EventName = TelemetryConstants.EventNames.DisableNextLineDiagnostics,
+                Properties = new()
+                {
+                    ["code"] = code,
+                },
+            };
+
+        public static BicepTelemetryEvent CreateLinterRuleStateChangeInBicepConfig(string rule, string prevDiagnosticLevel, string curDiagnosticLevel)
+            => new BicepTelemetryEvent
+            {
+                EventName = TelemetryConstants.EventNames.LinterRuleStateChange,
+                Properties = new()
+                {
+                    ["rule"] = rule,
+                    ["previousDiagnosticLevel"] = prevDiagnosticLevel,
+                    ["currentDiagnosticLevel"] = curDiagnosticLevel
+                }
+            };
+
+        public static BicepTelemetryEvent CreateOverallLinterStateChangeInBicepConfig(string prevState, string curState)
+            => new BicepTelemetryEvent
+            {
+                EventName = TelemetryConstants.EventNames.LinterCoreEnabledStateChange,
+                Properties = new()
+                {
+                    ["previousState"] = prevState,
+                    ["currentState"] = curState
+                }
+            };
+
+        public static BicepTelemetryEvent CreateLinterStateOnBicepFileOpen(Dictionary<string, string> properties)
+            => new BicepTelemetryEvent
+            {
+                EventName = TelemetryConstants.EventNames.LinterRuleStateOnBicepFileOpen,
+                Properties = properties
+            };
+
+        public static BicepTelemetryEvent CreateBicepFileOpen(Dictionary<string, string> properties)
+            => new BicepTelemetryEvent
+            {
+                EventName = TelemetryConstants.EventNames.BicepFileOpen,
+                Properties = properties
+            };
     }
 }

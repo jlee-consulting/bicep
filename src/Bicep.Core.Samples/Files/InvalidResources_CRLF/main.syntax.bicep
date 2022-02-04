@@ -222,30 +222,34 @@ resource foo 'Microsoft.Foo/foos@2020-02-02-alpha'= if ({ 'a': b }.a == 'foo') {
 //@[50:51)  Assignment |=|
 //@[52:83)  IfConditionSyntax
 //@[52:54)   Identifier |if|
-//@[55:83)   ParenthesizedExpressionSyntax
+//@[55:78)   ParenthesizedExpressionSyntax
 //@[55:56)    LeftParen |(|
-//@[56:83)    ObjectSyntax
-//@[56:57)     LeftBrace |{|
-//@[58:64)     ObjectPropertySyntax
-//@[58:61)      StringSyntax
-//@[58:61)       StringComplete |'a'|
-//@[61:62)      Colon |:|
-//@[63:64)      VariableAccessSyntax
-//@[63:64)       IdentifierSyntax
-//@[63:64)        Identifier |b|
-//@[65:82)     SkippedTriviaSyntax
-//@[65:66)      RightBrace |}|
+//@[56:77)    BinaryOperationSyntax
+//@[56:68)     PropertyAccessSyntax
+//@[56:66)      ObjectSyntax
+//@[56:57)       LeftBrace |{|
+//@[58:58)       SkippedTriviaSyntax
+//@[58:64)       ObjectPropertySyntax
+//@[58:61)        StringSyntax
+//@[58:61)         StringComplete |'a'|
+//@[61:62)        Colon |:|
+//@[63:64)        VariableAccessSyntax
+//@[63:64)         IdentifierSyntax
+//@[63:64)          Identifier |b|
+//@[65:65)       SkippedTriviaSyntax
+//@[65:66)       RightBrace |}|
 //@[66:67)      Dot |.|
-//@[67:68)      Identifier |a|
-//@[69:71)      Equals |==|
+//@[67:68)      IdentifierSyntax
+//@[67:68)       Identifier |a|
+//@[69:71)     Equals |==|
+//@[72:77)     StringSyntax
 //@[72:77)      StringComplete |'foo'|
-//@[77:78)      RightParen |)|
-//@[79:80)      LeftBrace |{|
-//@[80:82)      NewLine |\r\n|
+//@[77:78)    RightParen |)|
+//@[79:83)   ObjectSyntax
+//@[79:80)    LeftBrace |{|
+//@[80:82)    NewLine |\r\n|
 }
-//@[0:1)     RightBrace |}|
-//@[1:1)    SkippedTriviaSyntax
-//@[1:1)   SkippedTriviaSyntax
+//@[0:1)    RightBrace |}|
 //@[1:5) NewLine |\r\n\r\n|
 
 // simulate typing if condition
@@ -1024,6 +1028,100 @@ resource baz 'Microsoft.Foo/foos@2020-02-02-alpha' = {
 //@[14:18)    BooleanLiteralSyntax
 //@[14:18)     TrueKeyword |true|
 //@[18:20)   NewLine |\r\n|
+}
+//@[0:1)   RightBrace |}|
+//@[1:5) NewLine |\r\n\r\n|
+
+resource readOnlyPropertyAssignment 'Microsoft.Network/virtualNetworks@2020-06-01' = {
+//@[0:352) ResourceDeclarationSyntax
+//@[0:8)  Identifier |resource|
+//@[9:35)  IdentifierSyntax
+//@[9:35)   Identifier |readOnlyPropertyAssignment|
+//@[36:82)  StringSyntax
+//@[36:82)   StringComplete |'Microsoft.Network/virtualNetworks@2020-06-01'|
+//@[83:84)  Assignment |=|
+//@[85:352)  ObjectSyntax
+//@[85:86)   LeftBrace |{|
+//@[86:88)   NewLine |\r\n|
+  name: 'vnet-bicep'
+//@[2:20)   ObjectPropertySyntax
+//@[2:6)    IdentifierSyntax
+//@[2:6)     Identifier |name|
+//@[6:7)    Colon |:|
+//@[8:20)    StringSyntax
+//@[8:20)     StringComplete |'vnet-bicep'|
+//@[20:22)   NewLine |\r\n|
+  location: 'westeurope'
+//@[2:24)   ObjectPropertySyntax
+//@[2:10)    IdentifierSyntax
+//@[2:10)     Identifier |location|
+//@[10:11)    Colon |:|
+//@[12:24)    StringSyntax
+//@[12:24)     StringComplete |'westeurope'|
+//@[24:26)   NewLine |\r\n|
+  etag: 'assigning-to-read-only-value'
+//@[2:38)   ObjectPropertySyntax
+//@[2:6)    IdentifierSyntax
+//@[2:6)     Identifier |etag|
+//@[6:7)    Colon |:|
+//@[8:38)    StringSyntax
+//@[8:38)     StringComplete |'assigning-to-read-only-value'|
+//@[38:40)   NewLine |\r\n|
+  properties: {
+//@[2:173)   ObjectPropertySyntax
+//@[2:12)    IdentifierSyntax
+//@[2:12)     Identifier |properties|
+//@[12:13)    Colon |:|
+//@[14:173)    ObjectSyntax
+//@[14:15)     LeftBrace |{|
+//@[15:17)     NewLine |\r\n|
+    resourceGuid: 'assigning-to-read-only-value'
+//@[4:48)     ObjectPropertySyntax
+//@[4:16)      IdentifierSyntax
+//@[4:16)       Identifier |resourceGuid|
+//@[16:17)      Colon |:|
+//@[18:48)      StringSyntax
+//@[18:48)       StringComplete |'assigning-to-read-only-value'|
+//@[48:50)     NewLine |\r\n|
+    addressSpace: {
+//@[4:84)     ObjectPropertySyntax
+//@[4:16)      IdentifierSyntax
+//@[4:16)       Identifier |addressSpace|
+//@[16:17)      Colon |:|
+//@[18:84)      ObjectSyntax
+//@[18:19)       LeftBrace |{|
+//@[19:21)       NewLine |\r\n|
+      addressPrefixes: [
+//@[6:56)       ObjectPropertySyntax
+//@[6:21)        IdentifierSyntax
+//@[6:21)         Identifier |addressPrefixes|
+//@[21:22)        Colon |:|
+//@[23:56)        ArraySyntax
+//@[23:24)         LeftSquare |[|
+//@[24:26)         NewLine |\r\n|
+        '10.0.0.0/16'
+//@[8:21)         ArrayItemSyntax
+//@[8:21)          StringSyntax
+//@[8:21)           StringComplete |'10.0.0.0/16'|
+//@[21:23)         NewLine |\r\n|
+      ]
+//@[6:7)         RightSquare |]|
+//@[7:9)       NewLine |\r\n|
+    }
+//@[4:5)       RightBrace |}|
+//@[5:7)     NewLine |\r\n|
+    subnets: []
+//@[4:15)     ObjectPropertySyntax
+//@[4:11)      IdentifierSyntax
+//@[4:11)       Identifier |subnets|
+//@[11:12)      Colon |:|
+//@[13:15)      ArraySyntax
+//@[13:14)       LeftSquare |[|
+//@[14:15)       RightSquare |]|
+//@[15:17)     NewLine |\r\n|
+  }
+//@[2:3)     RightBrace |}|
+//@[3:5)   NewLine |\r\n|
 }
 //@[0:1)   RightBrace |}|
 //@[1:5) NewLine |\r\n\r\n|
@@ -8866,14 +8964,14 @@ resource stuffs 'Microsoft.Storage/storageAccounts@2019-06-01' = [for account in
 // using the same loop variable in a new language scope should be allowed
 //@[73:75) NewLine |\r\n|
 resource premiumStorages 'Microsoft.Storage/storageAccounts@2019-06-01' = [for account in storageAccounts: {
-//@[0:321) ResourceDeclarationSyntax
+//@[0:368) ResourceDeclarationSyntax
 //@[0:8)  Identifier |resource|
 //@[9:24)  IdentifierSyntax
 //@[9:24)   Identifier |premiumStorages|
 //@[25:71)  StringSyntax
 //@[25:71)   StringComplete |'Microsoft.Storage/storageAccounts@2019-06-01'|
 //@[72:73)  Assignment |=|
-//@[74:321)  ForSyntax
+//@[74:368)  ForSyntax
 //@[74:75)   LeftSquare |[|
 //@[75:78)   Identifier |for|
 //@[79:86)   LocalVariableSyntax
@@ -8884,11 +8982,11 @@ resource premiumStorages 'Microsoft.Storage/storageAccounts@2019-06-01' = [for a
 //@[90:105)    IdentifierSyntax
 //@[90:105)     Identifier |storageAccounts|
 //@[105:106)   Colon |:|
-//@[107:320)   ObjectSyntax
+//@[107:367)   ObjectSyntax
 //@[107:108)    LeftBrace |{|
 //@[108:110)    NewLine |\r\n|
-  // #completionTest(7,8) -> symbolsPlusAccount2
-//@[48:50)    NewLine |\r\n|
+  // #completionTest(7) -> symbolsPlusAccount1
+//@[46:48)    NewLine |\r\n|
   name: account.name
 //@[2:20)    ObjectPropertySyntax
 //@[2:6)     IdentifierSyntax
@@ -8902,6 +9000,8 @@ resource premiumStorages 'Microsoft.Storage/storageAccounts@2019-06-01' = [for a
 //@[16:20)      IdentifierSyntax
 //@[16:20)       Identifier |name|
 //@[20:22)    NewLine |\r\n|
+  // #completionTest(12) -> symbolsPlusAccount2
+//@[47:49)    NewLine |\r\n|
   location: account.location
 //@[2:28)    ObjectPropertySyntax
 //@[2:10)     IdentifierSyntax
@@ -11826,6 +11926,153 @@ resource dataCollectionRuleRes2 'Microsoft.Insights/dataCollectionRules@2021-04-
   }
 //@[2:3)     RightBrace |}|
 //@[3:5)   NewLine |\r\n|
+}
+//@[0:1)   RightBrace |}|
+//@[1:5) NewLine |\r\n\r\n|
+
+@description('The language of the Deployment Script. AzurePowerShell or AzureCLI.')
+//@[0:176) ParameterDeclarationSyntax
+//@[0:83)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:83)   FunctionCallSyntax
+//@[1:12)    IdentifierSyntax
+//@[1:12)     Identifier |description|
+//@[12:13)    LeftParen |(|
+//@[13:82)    FunctionArgumentSyntax
+//@[13:82)     StringSyntax
+//@[13:82)      StringComplete |'The language of the Deployment Script. AzurePowerShell or AzureCLI.'|
+//@[82:83)    RightParen |)|
+//@[83:85)  NewLine |\r\n|
+@allowed([
+//@[0:49)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:49)   FunctionCallSyntax
+//@[1:8)    IdentifierSyntax
+//@[1:8)     Identifier |allowed|
+//@[8:9)    LeftParen |(|
+//@[9:48)    FunctionArgumentSyntax
+//@[9:48)     ArraySyntax
+//@[9:10)      LeftSquare |[|
+//@[10:12)      NewLine |\r\n|
+  'AzureCLI'
+//@[2:12)      ArrayItemSyntax
+//@[2:12)       StringSyntax
+//@[2:12)        StringComplete |'AzureCLI'|
+//@[12:14)      NewLine |\r\n|
+  'AzurePowerShell'
+//@[2:19)      ArrayItemSyntax
+//@[2:19)       StringSyntax
+//@[2:19)        StringComplete |'AzurePowerShell'|
+//@[19:21)      NewLine |\r\n|
+])
+//@[0:1)      RightSquare |]|
+//@[1:2)    RightParen |)|
+//@[2:4)  NewLine |\r\n|
+param issue4668_kind string = 'AzureCLI'
+//@[0:5)  Identifier |param|
+//@[6:20)  IdentifierSyntax
+//@[6:20)   Identifier |issue4668_kind|
+//@[21:27)  TypeSyntax
+//@[21:27)   Identifier |string|
+//@[28:40)  ParameterDefaultValueSyntax
+//@[28:29)   Assignment |=|
+//@[30:40)   StringSyntax
+//@[30:40)    StringComplete |'AzureCLI'|
+//@[40:42) NewLine |\r\n|
+@description('The identity that will be used to execute the Deployment Script.')
+//@[0:113) ParameterDeclarationSyntax
+//@[0:80)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:80)   FunctionCallSyntax
+//@[1:12)    IdentifierSyntax
+//@[1:12)     Identifier |description|
+//@[12:13)    LeftParen |(|
+//@[13:79)    FunctionArgumentSyntax
+//@[13:79)     StringSyntax
+//@[13:79)      StringComplete |'The identity that will be used to execute the Deployment Script.'|
+//@[79:80)    RightParen |)|
+//@[80:82)  NewLine |\r\n|
+param issue4668_identity object
+//@[0:5)  Identifier |param|
+//@[6:24)  IdentifierSyntax
+//@[6:24)   Identifier |issue4668_identity|
+//@[25:31)  TypeSyntax
+//@[25:31)   Identifier |object|
+//@[31:33) NewLine |\r\n|
+@description('The properties of the Deployment Script.')
+//@[0:91) ParameterDeclarationSyntax
+//@[0:56)  DecoratorSyntax
+//@[0:1)   At |@|
+//@[1:56)   FunctionCallSyntax
+//@[1:12)    IdentifierSyntax
+//@[1:12)     Identifier |description|
+//@[12:13)    LeftParen |(|
+//@[13:55)    FunctionArgumentSyntax
+//@[13:55)     StringSyntax
+//@[13:55)      StringComplete |'The properties of the Deployment Script.'|
+//@[55:56)    RightParen |)|
+//@[56:58)  NewLine |\r\n|
+param issue4668_properties object
+//@[0:5)  Identifier |param|
+//@[6:26)  IdentifierSyntax
+//@[6:26)   Identifier |issue4668_properties|
+//@[27:33)  TypeSyntax
+//@[27:33)   Identifier |object|
+//@[33:35) NewLine |\r\n|
+resource issue4668_mainResource 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+//@[0:229) ResourceDeclarationSyntax
+//@[0:8)  Identifier |resource|
+//@[9:31)  IdentifierSyntax
+//@[9:31)   Identifier |issue4668_mainResource|
+//@[32:82)  StringSyntax
+//@[32:82)   StringComplete |'Microsoft.Resources/deploymentScripts@2020-10-01'|
+//@[83:84)  Assignment |=|
+//@[85:229)  ObjectSyntax
+//@[85:86)   LeftBrace |{|
+//@[86:88)   NewLine |\r\n|
+  name: 'testscript'
+//@[2:20)   ObjectPropertySyntax
+//@[2:6)    IdentifierSyntax
+//@[2:6)     Identifier |name|
+//@[6:7)    Colon |:|
+//@[8:20)    StringSyntax
+//@[8:20)     StringComplete |'testscript'|
+//@[20:22)   NewLine |\r\n|
+  location: 'westeurope'
+//@[2:24)   ObjectPropertySyntax
+//@[2:10)    IdentifierSyntax
+//@[2:10)     Identifier |location|
+//@[10:11)    Colon |:|
+//@[12:24)    StringSyntax
+//@[12:24)     StringComplete |'westeurope'|
+//@[24:26)   NewLine |\r\n|
+  kind: issue4668_kind
+//@[2:22)   ObjectPropertySyntax
+//@[2:6)    IdentifierSyntax
+//@[2:6)     Identifier |kind|
+//@[6:7)    Colon |:|
+//@[8:22)    VariableAccessSyntax
+//@[8:22)     IdentifierSyntax
+//@[8:22)      Identifier |issue4668_kind|
+//@[22:24)   NewLine |\r\n|
+  identity: issue4668_identity
+//@[2:30)   ObjectPropertySyntax
+//@[2:10)    IdentifierSyntax
+//@[2:10)     Identifier |identity|
+//@[10:11)    Colon |:|
+//@[12:30)    VariableAccessSyntax
+//@[12:30)     IdentifierSyntax
+//@[12:30)      Identifier |issue4668_identity|
+//@[30:32)   NewLine |\r\n|
+  properties: issue4668_properties
+//@[2:34)   ObjectPropertySyntax
+//@[2:12)    IdentifierSyntax
+//@[2:12)     Identifier |properties|
+//@[12:13)    Colon |:|
+//@[14:34)    VariableAccessSyntax
+//@[14:34)     IdentifierSyntax
+//@[14:34)      Identifier |issue4668_properties|
+//@[34:36)   NewLine |\r\n|
 }
 //@[0:1)   RightBrace |}|
 //@[1:3) NewLine |\r\n|

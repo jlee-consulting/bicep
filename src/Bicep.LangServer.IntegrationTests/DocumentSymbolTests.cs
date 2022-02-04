@@ -26,12 +26,14 @@ namespace Bicep.LangServer.IntegrationTests
             var documentUri = DocumentUri.From("/template.bicep");
             var diagsReceived = new TaskCompletionSource<PublishDiagnosticsParams>();
 
-            var client = await IntegrationTestHelper.StartServerWithClientConnectionAsync(this.TestContext, options => 
+            using var helper = await LanguageServerHelper.StartServerWithClientConnectionAsync(this.TestContext, options =>
             {
-                options.OnPublishDiagnostics(diags => {
+                options.OnPublishDiagnostics(diags =>
+                {
                     diagsReceived.SetResult(diags);
                 });
             });
+            var client = helper.Client;
 
             // client opens the document
             client.TextDocument.DidOpenTextDocument(TextDocumentParamHelper.CreateDidOpenDocumentParams(documentUri, @"
@@ -55,19 +57,23 @@ output myOutput string = 'myOutput'
             });
 
             symbols.Should().SatisfyRespectively(
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myParam");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Field);
                 },
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myRes");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Object);
                 },
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myMod");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Module);
                 },
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myOutput");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Interface);
                 }
@@ -94,15 +100,18 @@ module myMod './module.bicep' = {
             });
 
             symbols.Should().SatisfyRespectively(
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myParam");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Field);
                 },
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myRenamedRes");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Object);
                 },
-                x => {
+                x =>
+                {
                     x.DocumentSymbol!.Name.Should().Be("myMod");
                     x.DocumentSymbol.Kind.Should().Be(SymbolKind.Module);
                 }

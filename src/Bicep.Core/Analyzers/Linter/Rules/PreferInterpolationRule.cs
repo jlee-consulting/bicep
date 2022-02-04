@@ -21,7 +21,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         public PreferInterpolationRule() : base(
             code: Code,
             description: CoreResources.InterpolateNotConcatRuleDescription,
-            docUri: new Uri("https://aka.ms/bicep/linter/prefer-interpolation"))
+            docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         { }
 
         public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
@@ -33,7 +33,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
 
         private class Visitor : SyntaxVisitor
         {
-            public List<IDiagnostic> diagnostics = new List<IDiagnostic>();
+            public List<IDiagnostic> diagnostics = new();
 
             private const string concatFunction = "concat";
             private readonly PreferInterpolationRule parent;
@@ -74,7 +74,8 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             {
                 if (GetCodeReplacement(functionCallSyntax) is CodeReplacement cr)
                 {
-                    return new CodeFix($"Use string interpolation: {cr.Text}", true, cr); // TODO: localize
+                    string title = string.Format(CoreResources.InterpolateNotConcatFixTitle, cr.Text);
+                    return new CodeFix(title, true, CodeFixKind.QuickFix, cr);
                 }
                 return null;
             }
@@ -126,7 +127,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                 var segments = new List<string>();
 
                 SyntaxBase? prevArg = default;
-                var argList = argExpressions.Select((arg, i) => new { arg = arg, argindex = i });
+                var argList = argExpressions.Select((arg, i) => new { arg, argindex = i });
 
                 void addStringSyntax(StringSyntax stringSyntax)
                 {
@@ -169,7 +170,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                 }
 
                 // build tokens from segment list
-                var last = segments.Count() - 1;
+                var last = segments.Count - 1;
                 var index = 0;
                 segments.ForEach(segment =>
                 {

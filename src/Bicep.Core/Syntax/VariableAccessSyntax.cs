@@ -5,7 +5,10 @@ using Bicep.Core.Parsing;
 
 namespace Bicep.Core.Syntax
 {
-    public class VariableAccessSyntax: ExpressionSyntax, ISymbolReference
+    /// <summary>
+    /// Represents a reference to a variable or parameter
+    /// </summary>
+    public class VariableAccessSyntax : ExpressionSyntax, ISymbolReference
     {
         public VariableAccessSyntax(IdentifierSyntax name)
         {

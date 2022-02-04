@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using System;
 using System.Linq;
@@ -29,8 +29,13 @@ namespace Bicep.Core.Utils
         private class ModuleComparer : IEqualityComparer<ModuleDefinition>
         {
 
-            public bool Equals(ModuleDefinition x, ModuleDefinition y)
+            public bool Equals(ModuleDefinition? x, ModuleDefinition? y)
             {
+                if (x is null || y is null)
+                {
+                    return false;
+                }
+
                 if (x.ModulePropertyScopeType != y.ModulePropertyScopeType)
                 {
                     return false;
@@ -71,7 +76,7 @@ namespace Bicep.Core.Utils
                     hc.Add(x, StringSyntaxComparerInstance);
                 }
                 hc.Add(obj.ModulePropertyNameValue?.TryGetLiteralValue(), StringComparer.InvariantCultureIgnoreCase);
-                return hc.ToHashCode();                
+                return hc.ToHashCode();
             }
 
             private static readonly StringSyntaxComparer StringSyntaxComparerInstance = new();

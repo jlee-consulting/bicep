@@ -6,35 +6,43 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Bicep.Core;
-using Bicep.Core.Analyzers;
 using Bicep.Core.CodeAction;
-using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.FileSystem;
+using Bicep.Core.Navigation;
 using Bicep.Core.Parsing;
-using Bicep.Core.Registry;
 using Bicep.Core.Samples;
 using Bicep.Core.Semantics;
+using Bicep.Core.Text;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
 using Bicep.Core.Workspaces;
 using Bicep.LanguageServer;
 using Bicep.LanguageServer.Extensions;
+using Bicep.LanguageServer.Utils;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OmniSharp.Extensions.LanguageServer.Protocol;
+using OmniSharp.Extensions.LanguageServer.Protocol.Client;
 using OmniSharp.Extensions.LanguageServer.Protocol.Document;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using OmniSharp.Extensions.LanguageServer.Protocol.Workspace;
+using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
 namespace Bicep.LangServer.IntegrationTests
 {
     [TestClass]
     public class CodeActionTests
     {
+        private const string SecureTitle = "Add @secure";
+        private const string DescriptionTitle = "Add @description";
+        private const string AllowedTitle = "Add @allowed";
+        private const string MinLengthTitle = "Add @minLength";
+        private const string MaxLengthTitle = "Add @maxLength";
+        private const string MinValueTitle = "Add @minValue";
+        private const string MaxValueTitle = "Add @maxValue";
+
         [NotNull]
         public TestContext? TestContext { get; set; }
 
@@ -46,26 +54,27 @@ namespace Bicep.LangServer.IntegrationTests
             var uri = DocumentUri.From(fileUri);
 
             // start language server
-            var client = await IntegrationTestHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri, creationOptions: new LanguageServer.Server.CreationOptions(FileResolver: new FileResolver()));
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(this.TestContext, dataSet.Bicep, uri, creationOptions: new LanguageServer.Server.CreationOptions(FileResolver: new FileResolver()));
+            var client = helper.Client;
 
             // construct a parallel compilation
             var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
             var fixables = compilation.GetEntrypointSemanticModel().GetAllDiagnostics().OfType<IFixable>();
 
-            foreach (IFixable fixable in fixables)
+            foreach (var fixable in fixables)
             {
                 foreach (var span in GetOverlappingSpans(fixable.Span))
                 {
-                    CommandOrCodeActionContainer? quickFixes = await client.RequestCodeAction(new CodeActionParams
+                    var quickFixes = await client.RequestCodeAction(new CodeActionParams
                     {
                         TextDocument = new TextDocumentIdentifier(uri),
-                        Range = span.ToRange(lineStarts)
+                        Range = span.ToRange(lineStarts),
                     });
 
                     // Assert.
                     quickFixes.Should().NotBeNull();
 
-                    var quickFixList = quickFixes.Where(x => x.CodeAction.Kind == CodeActionKind.QuickFix).ToList();
+                    var quickFixList = quickFixes.Where(x => x.CodeAction?.Kind == CodeActionKind.QuickFix).ToList();
                     var bicepFixList = fixable.Fixes.ToList();
 
                     quickFixList.Should().HaveSameCount(bicepFixList);
@@ -97,76 +106,47 @@ namespace Bicep.LangServer.IntegrationTests
         }
 
         [TestMethod]
-        public async Task DisableLinterRuleCodeActionInvocation_WithoutBicepConfig_ShouldCreateConfigFileAndDisableRule()
+        public async Task VerifyCodeActionIsAvailableToSuppressLinterWarning()
         {
-            var bicepFileContents = "param storageAccountName string = 'testAccount'";
-            var expectedBicepConfigContents = @"{
-  ""cloud"": {
-    ""currentProfile"": ""AzureCloud"",
-    ""profiles"": {
-      ""AzureCloud"": {
-        ""resourceManagerEndpoint"": ""https://management.azure.com""
-      },
-      ""AzureChinaCloud"": {
-        ""resourceManagerEndpoint"": ""https://management.chinacloudapi.cn""
-      },
-      ""AzureUSGovernment"": {
-        ""resourceManagerEndpoint"": ""https://management.usgovcloudapi.net""
-      }
-    }
-  },
-  ""moduleAliases"": {
-    ""ts"": {},
-    ""br"": {}
-  },
+            var bicepConfigFileContents = @"{
   ""analyzers"": {
     ""core"": {
       ""verbose"": false,
       ""enabled"": true,
       ""rules"": {
-        ""no-hardcoded-env-urls"": {
-          ""level"": ""warning"",
-          ""disallowedhosts"": [
-            ""gallery.azure.com"",
-            ""management.core.windows.net"",
-            ""management.azure.com"",
-            ""database.windows.net"",
-            ""core.windows.net"",
-            ""login.microsoftonline.com"",
-            ""graph.windows.net"",
-            ""trafficmanager.net"",
-            ""datalake.azure.net"",
-            ""azuredatalakestore.net"",
-            ""azuredatalakeanalytics.net"",
-            ""vault.azure.net"",
-            ""api.loganalytics.io"",
-            ""asazure.windows.net"",
-            ""region.asazure.windows.net"",
-            ""batch.core.windows.net""
-          ],
-          ""excludedhosts"": [
-            ""schema.management.azure.com""
-          ]
-        },
         ""no-unused-params"": {
-          ""level"": ""off""
+          ""level"": ""warning""
         }
       }
     }
   }
 }";
-            await VerifyLinterRuleIsDisabledAsync(bicepFileContents: bicepFileContents,
-                                                  bicepConfigFileContents: null,
-                                                  diagnosticLevel: DiagnosticLevel.Warning,
-                                                  diagnosticMessage: @"Parameter ""storageAccountName"" is declared but never used.",
-                                                  expectedBicepConfigFileContents: expectedBicepConfigContents);
+            await VerifyCodeActionIsAvailableToSuppressLinterDiagnostics(bicepConfigFileContents);
         }
 
         [TestMethod]
-        public async Task DisableLinterRuleCodeActionInvocation_WithBicepConfig_ShouldUpdateConfigFileAndDisableRule()
+        public async Task VerifyCodeActionIsAvailableToSuppressLinterError()
         {
-            var bicepFileContents = "param storageAccountName string = 'testAccount'";
-            var bicepConfigContents = @"{
+            var bicepConfigFileContents = @"{
+  ""analyzers"": {
+    ""core"": {
+      ""verbose"": false,
+      ""enabled"": true,
+      ""rules"": {
+        ""no-unused-params"": {
+          ""level"": ""error""
+        }
+      }
+    }
+  }
+}";
+            await VerifyCodeActionIsAvailableToSuppressLinterDiagnostics(bicepConfigFileContents);
+        }
+
+        [TestMethod]
+        public async Task VerifyCodeActionIsAvailableToSuppressLinterInfo()
+        {
+            var bicepConfigFileContents = @"{
   ""analyzers"": {
     ""core"": {
       ""verbose"": false,
@@ -179,306 +159,347 @@ namespace Bicep.LangServer.IntegrationTests
     }
   }
 }";
-            var expectedBicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-unused-params"": {
-          ""level"": ""off""
-        }
-      }
-    }
-  }
-}";
-            await VerifyLinterRuleIsDisabledAsync(bicepFileContents: bicepFileContents,
-                                                  bicepConfigFileContents: bicepConfigContents,
-                                                  diagnosticLevel: DiagnosticLevel.Info,
-                                                  diagnosticMessage: @"Parameter ""storageAccountName"" is declared but never used.",
-                                                  expectedBicepConfigFileContents: expectedBicepConfigContents);
-
+            await VerifyCodeActionIsAvailableToSuppressLinterDiagnostics(bicepConfigFileContents);
         }
 
-        [TestMethod]
-        public async Task DisableLinterRuleCodeActionInvocation_WithoutRulesNodeInBicepConfig_ShouldUpdateConfigFileAndDisableRule()
-        {
-            var bicepFileContents = "param storageAccountName string = 'testAccount'";
-            var bicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true
-    }
-  }
-}";
-            var expectedBicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-unused-params"": {
-          ""level"": ""off""
-        }
-      }
-    }
-  }
-}";
-            await VerifyLinterRuleIsDisabledAsync(bicepFileContents: bicepFileContents,
-                                                  bicepConfigFileContents: bicepConfigContents,
-                                                  diagnosticLevel: DiagnosticLevel.Warning,
-                                                  diagnosticMessage: @"Parameter ""storageAccountName"" is declared but never used.",
-                                                  expectedBicepConfigFileContents: expectedBicepConfigContents);
-
-        }
-
-        [TestMethod]
-        public async Task DisableLinterRuleCodeActionInvocation_WithoutRuleInBicepConfig_ShouldUpdateConfigFileAndDisableRule()
-        {
-            var bicepFileContents = "param storageAccountName string = 'testAccount'";
-            var bicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-unused-vars"": {
-          ""level"": ""warning""
-        }
-      }
-    }
-  }
-}";
-            var expectedBicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-unused-vars"": {
-          ""level"": ""warning""
-        },
-        ""no-unused-params"": {
-          ""level"": ""off""
-        }
-      }
-    }
-  }
-}";
-            await VerifyLinterRuleIsDisabledAsync(bicepFileContents: bicepFileContents,
-                                                  bicepConfigFileContents: bicepConfigContents,
-                                                  diagnosticLevel: DiagnosticLevel.Warning,
-                                                  diagnosticMessage: @"Parameter ""storageAccountName"" is declared but never used.",
-                                                  expectedBicepConfigFileContents: expectedBicepConfigContents);
-
-        }
-
-        [TestMethod]
-        public async Task DisableLinterRuleCodeActionInvocation_WithoutLevelPropertyInRule_ShouldUpdateConfigFileAndDisableRule()
-        {
-            var bicepFileContents = "param storageAccountName string = 'testAccount'";
-            var bicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-unused-params"": {
-        }
-      }
-    }
-  }
-}";
-            var expectedBicepConfigContents = @"{
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-unused-params"": {
-          ""level"": ""off""
-        }
-      }
-    }
-  }
-}";
-            await VerifyLinterRuleIsDisabledAsync(bicepFileContents: bicepFileContents,
-                                                  bicepConfigFileContents: bicepConfigContents,
-                                                  diagnosticLevel: DiagnosticLevel.Warning,
-                                                  diagnosticMessage: @"Parameter ""storageAccountName"" is declared but never used.",
-                                                  expectedBicepConfigFileContents: expectedBicepConfigContents);
-
-        }
-
-        [TestMethod]
-        public async Task DisableLinterRuleCodeActionInvocation_WithOnlyCurlyBracesInBicepConfig_ShouldUpdateConfigFileAndDisableRule()
-        {
-            var bicepFileContents = "param storageAccountName string = 'testAccount'";
-            var bicepConfigContents = @"{}";
-            var expectedBicepConfigContents = @"{
-  ""cloud"": {
-    ""currentProfile"": ""AzureCloud"",
-    ""profiles"": {
-      ""AzureCloud"": {
-        ""resourceManagerEndpoint"": ""https://management.azure.com""
-      },
-      ""AzureChinaCloud"": {
-        ""resourceManagerEndpoint"": ""https://management.chinacloudapi.cn""
-      },
-      ""AzureUSGovernment"": {
-        ""resourceManagerEndpoint"": ""https://management.usgovcloudapi.net""
-      }
-    }
-  },
-  ""moduleAliases"": {
-    ""ts"": {},
-    ""br"": {}
-  },
-  ""analyzers"": {
-    ""core"": {
-      ""verbose"": false,
-      ""enabled"": true,
-      ""rules"": {
-        ""no-hardcoded-env-urls"": {
-          ""level"": ""warning"",
-          ""disallowedhosts"": [
-            ""gallery.azure.com"",
-            ""management.core.windows.net"",
-            ""management.azure.com"",
-            ""database.windows.net"",
-            ""core.windows.net"",
-            ""login.microsoftonline.com"",
-            ""graph.windows.net"",
-            ""trafficmanager.net"",
-            ""datalake.azure.net"",
-            ""azuredatalakestore.net"",
-            ""azuredatalakeanalytics.net"",
-            ""vault.azure.net"",
-            ""api.loganalytics.io"",
-            ""asazure.windows.net"",
-            ""region.asazure.windows.net"",
-            ""batch.core.windows.net""
-          ],
-          ""excludedhosts"": [
-            ""schema.management.azure.com""
-          ]
-        },
-        ""no-unused-params"": {
-          ""level"": ""off""
-        }
-      }
-    }
-  }
-}";
-            await VerifyLinterRuleIsDisabledAsync(bicepFileContents: bicepFileContents,
-                                                  bicepConfigFileContents: bicepConfigContents,
-                                                  diagnosticLevel: DiagnosticLevel.Warning,
-                                                  diagnosticMessage: @"Parameter ""storageAccountName"" is declared but never used.",
-                                                  expectedBicepConfigFileContents: expectedBicepConfigContents);
-        }
-
-
-        private async Task VerifyLinterRuleIsDisabledAsync(string bicepFileContents, string? bicepConfigFileContents, DiagnosticLevel diagnosticLevel, string diagnosticMessage, string expectedBicepConfigFileContents)
+        private async Task VerifyCodeActionIsAvailableToSuppressLinterDiagnostics(string bicepConfigFileContents)
         {
             var testOutputPath = Path.Combine(TestContext.ResultsDirectory, Guid.NewGuid().ToString());
-
+            var bicepFileContents = @"param storageAccount string = 'testStorageAccount'";
             var bicepFilePath = FileHelper.SaveResultFile(TestContext, "main.bicep", bicepFileContents, testOutputPath);
             var documentUri = DocumentUri.FromFileSystemPath(bicepFilePath);
+            var uri = documentUri.ToUri();
 
             var fileSystemDict = new Dictionary<Uri, string>();
-            fileSystemDict[documentUri.ToUri()] = bicepFileContents;
+            fileSystemDict[uri] = bicepFileContents;
 
-            string bicepConfigFilePath;
+            string bicepConfigFilePath = FileHelper.SaveResultFile(TestContext, "bicepconfig.json", bicepConfigFileContents, testOutputPath);
+            var bicepConfigUri = DocumentUri.FromFileSystemPath(bicepConfigFilePath);
+            fileSystemDict[bicepConfigUri.ToUri()] = bicepConfigFileContents;
 
-            if (bicepConfigFileContents is not null)
-            {
-                bicepConfigFilePath = FileHelper.SaveResultFile(TestContext, "bicepconfig.json", bicepConfigFileContents, testOutputPath);
-                var bicepConfigUri = DocumentUri.FromFileSystemPath(bicepConfigFilePath);
-                fileSystemDict[bicepConfigUri.ToUri()] = bicepConfigFileContents;
-            }
-            else
-            {
-                bicepConfigFilePath = Path.Combine(testOutputPath, LanguageConstants.BicepConfigurationFileName);
-            }
-
-            var workspace = new Workspace();
-            var compilation = GetCompilation(bicepFilePath, workspace);
-
-            var serverOptions = new Server.CreationOptions(FileResolver: new InMemoryFileResolver(fileSystemDict));
-
-            // Start language server
-            var client = await IntegrationTestHelper.StartServerWithTextAsync(TestContext,
-                bicepFileContents,
-                documentUri,
-                creationOptions: serverOptions);
-
+            var compilation = new Compilation(BicepTestConstants.NamespaceProvider, SourceFileGroupingFactory.CreateForFiles(fileSystemDict, uri, BicepTestConstants.FileResolver, BicepTestConstants.BuiltInConfiguration), BicepTestConstants.BuiltInConfiguration, BicepTestConstants.LinterAnalyzer);
             var diagnostics = compilation.GetEntrypointSemanticModel().GetAllDiagnostics();
 
-            // Verify diagnostics before code action for disabling linter rule is invoked
             diagnostics.Should().HaveCount(1);
             diagnostics.Should().SatisfyRespectively(
                 x =>
                 {
-                    x.Level.Should().Be(diagnosticLevel);
-                    x.Message.Should().Be(diagnosticMessage);
+                    x.Code.Should().Be("no-unused-params");
                 });
+
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(
+                this.TestContext,
+                bicepFileContents,
+                documentUri,
+                creationOptions: new Server.CreationOptions(NamespaceProvider: BuiltInTestTypes.Create()));
+            ILanguageClient client = helper.Client;
+
             var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
-            var disableLinterRuleCodeActionSpan = diagnostics.OfType<AnalyzerDiagnostic>().First().Span;
 
             var codeActions = await client.RequestCodeAction(new CodeActionParams
             {
                 TextDocument = new TextDocumentIdentifier(documentUri),
-                Range = disableLinterRuleCodeActionSpan.ToRange(lineStarts)
+                Range = diagnostics.First().ToRange(lineStarts)
             });
 
-            var command = codeActions.First().CodeAction!.Command;
-
-            command!.Should().NotBeNull();
-            command!.Name.Should().Be(LanguageConstants.DisableLinterRuleCommandName);
-
-            await client.Workspace.ExecuteCommand(command);
-
-            // Verify diagnostics is cleared
-            GetCompilation(bicepFilePath, workspace).GetEntrypointSemanticModel().GetAllDiagnostics().Should().BeEmpty();
-
-            // Verify bicepconfig.json file contents
-            File.ReadAllText(bicepConfigFilePath).Should().BeEquivalentToIgnoringNewlines(expectedBicepConfigFileContents);
+            var disableCodeAction = codeActions.Single(x => x.CodeAction?.Title == "Disable no-unused-params for this line");
+            disableCodeAction.CodeAction!.Edit!.Changes!.First().Value.First().NewText.Should().Be("#disable-next-line no-unused-params\n");
         }
 
-        private Compilation GetCompilation(string bicepFilePath, Workspace workspace)
+        [TestMethod]
+        public async Task VerifyCodeActionIsNotAvailableToSuppressCoreCompilerError()
         {
-            var moduleRegistryProvider = new DefaultModuleRegistryProvider(BicepTestConstants.FileResolver, BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory, BicepTestConstants.Features);
-            var dispatcher = new ModuleDispatcher(moduleRegistryProvider);
-            var sourceFileGrouping = SourceFileGroupingBuilder.Build(BicepTestConstants.FileResolver, dispatcher, workspace, PathHelper.FilePathToFileUrl(bicepFilePath));
-            var configuration = BicepTestConstants.ConfigurationManager.GetConfiguration(new Uri(bicepFilePath));
+            var bicepFileContents = @"#disable-next-line BCP029 BCP068
+resource test";
+            var bicepFilePath = FileHelper.SaveResultFile(TestContext, "main.bicep", bicepFileContents);
+            var documentUri = DocumentUri.FromFileSystemPath(bicepFilePath);
+            var uri = documentUri.ToUri();
 
-            return new Compilation(TestTypeHelper.CreateEmptyProvider(), sourceFileGrouping, configuration);
+            var files = new Dictionary<Uri, string>
+            {
+                [uri] = bicepFileContents,
+            };
+
+            var compilation = new Compilation(BicepTestConstants.NamespaceProvider, SourceFileGroupingFactory.CreateForFiles(files, uri, BicepTestConstants.FileResolver, BicepTestConstants.BuiltInConfiguration), BicepTestConstants.BuiltInConfiguration, BicepTestConstants.LinterAnalyzer);
+            var diagnostics = compilation.GetEntrypointSemanticModel().GetAllDiagnostics();
+
+            diagnostics.Should().HaveCount(2);
+            diagnostics.Should().SatisfyRespectively(
+                x =>
+                {
+                    x.Level.Should().Be(DiagnosticLevel.Error);
+                    x.Code.Should().Be("BCP068");
+                },
+                x =>
+                {
+                    x.Level.Should().Be(DiagnosticLevel.Error);
+                    x.Code.Should().Be("BCP029");
+                });
+
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(
+                this.TestContext,
+                bicepFileContents,
+                documentUri,
+                creationOptions: new Server.CreationOptions(NamespaceProvider: BuiltInTestTypes.Create()));
+            ILanguageClient client = helper.Client;
+
+            var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
+
+            var codeActions = await client.RequestCodeAction(new CodeActionParams
+            {
+                TextDocument = new TextDocumentIdentifier(documentUri),
+                Range = diagnostics.First().ToRange(lineStarts)
+            });
+
+            codeActions.Should().BeEmpty();
+        }
+
+        [TestMethod]
+        public async Task VerifyCodeActionIsAvailableToSuppressCoreCompilerWarning()
+        {
+            var bicepFileContents = @"var vmProperties = {
+  diagnosticsProfile: {
+    bootDiagnostics: {
+      enabled: 123
+      storageUri: true
+      unknownProp: 'asdf'
+    }
+  }
+  evictionPolicy: 'Deallocate'
+}
+resource vm 'Microsoft.Compute/virtualMachines@2020-12-01' = {
+  name: 'vm'
+#disable-next-line no-hardcoded-location
+  location: 'West US'
+  properties: vmProperties
+}";
+            var bicepFilePath = FileHelper.SaveResultFile(TestContext, "main.bicep", bicepFileContents);
+            var documentUri = DocumentUri.FromFileSystemPath(bicepFilePath);
+            var uri = documentUri.ToUri();
+
+            var files = new Dictionary<Uri, string>
+            {
+                [uri] = bicepFileContents,
+            };
+
+            var compilation = new Compilation(BicepTestConstants.NamespaceProvider, SourceFileGroupingFactory.CreateForFiles(files, uri, BicepTestConstants.FileResolver, BicepTestConstants.BuiltInConfiguration), BicepTestConstants.BuiltInConfiguration, BicepTestConstants.LinterAnalyzer);
+            var diagnostics = compilation.GetEntrypointSemanticModel().GetAllDiagnostics();
+
+            diagnostics.Should().HaveCount(3);
+            diagnostics.Should().SatisfyRespectively(
+                x =>
+                {
+                    x.Level.Should().Be(DiagnosticLevel.Warning);
+                    x.Code.Should().Be("BCP036");
+                },
+                x =>
+                {
+                    x.Level.Should().Be(DiagnosticLevel.Warning);
+                    x.Code.Should().Be("BCP036");
+                },
+                x =>
+                {
+                    x.Level.Should().Be(DiagnosticLevel.Warning);
+                    x.Code.Should().Be("BCP037");
+                });
+
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(
+                this.TestContext,
+                bicepFileContents,
+                documentUri,
+                creationOptions: new Server.CreationOptions(NamespaceProvider: BicepTestConstants.NamespaceProvider));
+            ILanguageClient client = helper.Client;
+
+            var lineStarts = compilation.SourceFileGrouping.EntryPoint.LineStarts;
+
+            var codeActions = await client.RequestCodeAction(new CodeActionParams
+            {
+                TextDocument = new TextDocumentIdentifier(documentUri),
+                Range = diagnostics.First().ToRange(lineStarts)
+            });
+
+            codeActions.Count().Should().Be(2);
+
+            codeActions.Should().SatisfyRespectively(
+                x =>
+                {
+                    x.CodeAction!.Title.Should().Be("Disable BCP036 for this line");
+                    x.CodeAction.Edit!.Changes!.First().Value.First().NewText.Should().Be("#disable-next-line BCP036\n");
+                },
+                x =>
+                {
+                    x.CodeAction!.Title.Should().Be("Disable BCP037 for this line");
+                    x.CodeAction.Edit!.Changes!.First().Value.First().NewText.Should().Be("#disable-next-line BCP037\n");
+                });
+        }
+
+        [DataRow("string", "@secure()", SecureTitle)]
+        [DataRow("object", "@secure()", SecureTitle)]
+        [DataRow("string", "@description('')", DescriptionTitle)]
+        [DataRow("object", "@description('')", DescriptionTitle)]
+        [DataRow("array", "@description('')", DescriptionTitle)]
+        [DataRow("bool", "@description('')", DescriptionTitle)]
+        [DataRow("int", "@description('')", DescriptionTitle)]
+        [DataRow("string", "@allowed([])", AllowedTitle)]
+        [DataRow("object", "@allowed([])", AllowedTitle)]
+        [DataRow("array", "@allowed([])", AllowedTitle)]
+        [DataRow("bool", "@allowed([])", AllowedTitle)]
+        [DataRow("int", "@allowed([])", AllowedTitle)]
+        [DataRow("string", "@minLength()", MinLengthTitle)]
+        [DataRow("array", "@minLength()", MinLengthTitle)]
+        [DataRow("string", "@maxLength()", MaxLengthTitle)]
+        [DataRow("array", "@maxLength()", MaxLengthTitle)]
+        [DataRow("int", "@minValue()", MinValueTitle)]
+        [DataRow("int", "@maxValue()", MaxValueTitle)]
+        [DataTestMethod]
+        public async Task Parameter_decorator_actions_are_suggested(string type, string decorator, string title)
+        {
+            (var codeActions, var bicepFile) = await RunParameterSyntaxTest(type);
+            codeActions.Should().Contain(x => x.Title == title);
+            codeActions.First(x => x.Title == title).Kind.Should().Be(CodeActionKind.Refactor);
+
+            var updatedFile = ApplyCodeAction(bicepFile, codeActions.Single(x => x.Title == title));
+            updatedFile.Should().HaveSourceText($@"
+{decorator}
+param foo {type}
+");
+        }
+
+        [DataRow("string", "@secure()", SecureTitle)]
+        [DataRow("object", "@secure()", SecureTitle)]
+        [DataRow("string", "@description()", DescriptionTitle)]
+        [DataRow("object", "@description()", DescriptionTitle)]
+        [DataRow("array", "@description()", DescriptionTitle)]
+        [DataRow("bool", "@description()", DescriptionTitle)]
+        [DataRow("int", "@description()", DescriptionTitle)]
+        [DataRow("string", "@allowed([])", AllowedTitle)]
+        [DataRow("object", "@allowed([])", AllowedTitle)]
+        [DataRow("array", "@allowed([])", AllowedTitle)]
+        [DataRow("bool", "@allowed([])", AllowedTitle)]
+        [DataRow("int", "@allowed([])", AllowedTitle)]
+        [DataRow("string", "@minLength()", MinLengthTitle)]
+        [DataRow("object", "@minLength()", MinLengthTitle)]
+        [DataRow("string", "@maxLength()", MaxLengthTitle)]
+        [DataRow("object", "@maxLength()", MaxLengthTitle)]
+        [DataRow("int", "@minValue()", MinValueTitle)]
+        [DataRow("int", "@maxValue()", MaxValueTitle)]
+        [DataTestMethod]
+        public async Task Parameter_duplicate_decorators_are_not_suggested(string type, string decorator, string title)
+        {
+            (var codeActions, var bicepFile) = await RunParameterSyntaxTest(type, decorator);
+            codeActions.Should().NotContain(x => x.Title == title);
+        }
+
+        [DataRow("array", SecureTitle)]
+        [DataRow("bool", SecureTitle)]
+        [DataRow("int", SecureTitle)]
+        [DataRow("object", MinLengthTitle)]
+        [DataRow("bool", MinLengthTitle)]
+        [DataRow("int", MinLengthTitle)]
+        [DataRow("object", MaxLengthTitle)]
+        [DataRow("bool", MaxLengthTitle)]
+        [DataRow("int", MaxLengthTitle)]
+        [DataRow("object", MinValueTitle)]
+        [DataRow("bool", MinValueTitle)]
+        [DataRow("string", MinValueTitle)]
+        [DataRow("array", MinValueTitle)]
+        [DataRow("object", MaxValueTitle)]
+        [DataRow("bool", MaxValueTitle)]
+        [DataRow("string", MaxValueTitle)]
+        [DataRow("array", MaxValueTitle)]
+        [DataTestMethod]
+        public async Task Parameter_decorators_are_not_suggested_for_unsupported_type(string type, string title)
+        {
+            (var codeActions, var bicepFile) = await RunParameterSyntaxTest(type);
+            codeActions.Should().NotContain(x => x.Title == title);
+        }
+
+        private async Task<(IEnumerable<CodeAction> codeActions, BicepFile bicepFile)> RunParameterSyntaxTest(string paramType, string? decorator = null)
+        {
+            string fileWithCursors = @$"
+param fo|o {paramType}
+";
+            if (decorator is not null)
+            {
+                fileWithCursors = @$"
+{decorator}
+param fo|o {paramType}
+";
+            }
+
+            var (file, cursors) = ParserHelper.GetFileWithCursors(fileWithCursors);
+            var bicepFile = SourceFileFactory.CreateBicepFile(new Uri("file:///main.bicep"), file);
+            using var helper = await LanguageServerHelper.StartServerWithTextAsync(TestContext, file, bicepFile.FileUri);
+            var client = helper.Client;
+
+            var codeActions = await RequestCodeActions(client, bicepFile, cursors.Single());
+            return (codeActions, bicepFile);
         }
 
         private static IEnumerable<TextSpan> GetOverlappingSpans(TextSpan span)
         {
+            // NOTE: These code assumes there are no errors in the code that are exactly adject to each other or that overlap
+
             // Same span.
             yield return span;
 
             // Adjacent spans before.
-            int startOffset = Math.Max(0, span.Position - 10);
-            yield return new TextSpan(startOffset, 10);
+            int startOffset = Math.Max(0, span.Position - 1);
+            yield return new TextSpan(startOffset, 1);
             yield return new TextSpan(span.Position, 0);
 
             // Adjacent spans after.
-            yield return new TextSpan(span.GetEndPosition(), 10);
+            yield return new TextSpan(span.GetEndPosition(), 1);
             yield return new TextSpan(span.GetEndPosition(), 0);
 
             // Overlapping spans.
-            yield return new TextSpan(startOffset, 11);
+            yield return new TextSpan(startOffset, 2);
             yield return new TextSpan(span.Position + 1, span.Length);
-            yield return new TextSpan(startOffset, span.Length + 10);
+            yield return new TextSpan(startOffset, span.Length + 1);
         }
 
         private static IEnumerable<object[]> GetData()
         {
             return DataSets.NonStressDataSets.ToDynamicTestData();
+        }
+
+        private static async Task<IEnumerable<CodeAction>> RequestCodeActions(ILanguageClient client, BicepFile bicepFile, int cursor)
+        {
+            var startPosition = TextCoordinateConverter.GetPosition(bicepFile.LineStarts, cursor);
+            var endPosition = TextCoordinateConverter.GetPosition(bicepFile.LineStarts, cursor);
+
+            var result = await client.RequestCodeAction(new CodeActionParams
+            {
+                TextDocument = new TextDocumentIdentifier(bicepFile.FileUri),
+                Range = new Range(startPosition, endPosition),
+            });
+
+            return result.Select(x => x.CodeAction).WhereNotNull();
+        }
+
+        private static BicepFile ApplyCodeAction(BicepFile bicepFile, CodeAction codeAction, params string[] tabStops)
+        {
+            // only support a small subset of possible edits for now - can always expand this later on
+            codeAction.Edit!.Changes.Should().NotBeNull();
+            codeAction.Edit.Changes.Should().HaveCount(1);
+            codeAction.Edit.Changes.Should().ContainKey(bicepFile.FileUri);
+
+            var changes = codeAction.Edit.Changes![bicepFile.FileUri];
+            changes.Should().HaveCount(1);
+
+            var replacement = changes.Single();
+
+            var start = PositionHelper.GetOffset(bicepFile.LineStarts, replacement.Range.Start);
+            var end = PositionHelper.GetOffset(bicepFile.LineStarts, replacement.Range.End);
+            var textToInsert = replacement.NewText;
+
+            // the handler can contain tabs. convert to double space to simplify printing.
+            textToInsert = textToInsert.Replace("\t", "  ");
+
+            var originalFile = bicepFile.ProgramSyntax.ToTextPreserveFormatting();
+            var replaced = originalFile.Substring(0, start) + textToInsert + originalFile.Substring(end);
+
+            return SourceFileFactory.CreateBicepFile(bicepFile.FileUri, replaced);
         }
     }
 }

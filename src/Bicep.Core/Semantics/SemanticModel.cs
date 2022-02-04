@@ -5,8 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
-using Bicep.Core.Analyzers.Linter;
-using Bicep.Core.Configuration;
+using Bicep.Core.Analyzers.Interfaces;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Emit;
 using Bicep.Core.Extensions;
@@ -14,6 +13,7 @@ using Bicep.Core.FileSystem;
 using Bicep.Core.Semantics.Metadata;
 using Bicep.Core.Syntax;
 using Bicep.Core.Syntax.Visitors;
+using Bicep.Core.Text;
 using Bicep.Core.TypeSystem;
 using Bicep.Core.Workspaces;
 
@@ -24,21 +24,19 @@ namespace Bicep.Core.Semantics
         private readonly Lazy<EmitLimitationInfo> emitLimitationInfoLazy;
         private readonly Lazy<SymbolHierarchy> symbolHierarchyLazy;
         private readonly Lazy<ResourceAncestorGraph> resourceAncestorsLazy;
-        private readonly Lazy<LinterAnalyzer> linterAnalyzerLazy;
         private readonly Lazy<ImmutableArray<TypeProperty>> parameterTypePropertiesLazy;
         private readonly Lazy<ImmutableArray<TypeProperty>> outputTypePropertiesLazy;
 
         private readonly Lazy<ImmutableArray<ResourceMetadata>> allResourcesLazy;
         private readonly Lazy<IEnumerable<IDiagnostic>> allDiagnostics;
 
-        public SemanticModel(Compilation compilation, BicepFile sourceFile, IFileResolver fileResolver, RootConfiguration configuration)
+        public SemanticModel(Compilation compilation, BicepFile sourceFile, IFileResolver fileResolver, IBicepAnalyzer linterAnalyzer)
         {
             Trace.WriteLine($"Building semantic model for {sourceFile.FileUri}");
 
             Compilation = compilation;
             SourceFile = sourceFile;
             FileResolver = fileResolver;
-            Configuration = configuration;
 
             // create this in locked mode by default
             // this blocks accidental type or binding queries until binding is done
@@ -64,9 +62,7 @@ namespace Bicep.Core.Semantics
             this.resourceAncestorsLazy = new Lazy<ResourceAncestorGraph>(() => ResourceAncestorGraph.Compute(this));
             this.ResourceMetadata = new ResourceMetadataCache(this);
 
-            // lazy loading the linter will delay linter rule loading
-            // and configuration loading until the linter is actually needed
-            this.linterAnalyzerLazy = new Lazy<LinterAnalyzer>(() => new LinterAnalyzer(configuration));
+            LinterAnalyzer = linterAnalyzer;
 
             this.allResourcesLazy = new Lazy<ImmutableArray<ResourceMetadata>>(() => GetAllResourceMetadata());
 
@@ -86,7 +82,8 @@ namespace Bicep.Core.Semantics
                         typePropertyFlags |= TypePropertyFlags.Required;
                     }
 
-                    paramTypeProperties.Add(new TypeProperty(param.Name, param.Type, typePropertyFlags));
+                    var description = SemanticModelHelper.TryGetDescription(this, param.DeclaringParameter);
+                    paramTypeProperties.Add(new TypeProperty(param.Name, param.Type, typePropertyFlags, description));
                 }
 
                 return paramTypeProperties.ToImmutableArray();
@@ -98,7 +95,8 @@ namespace Bicep.Core.Semantics
 
                 foreach (var output in this.Root.OutputDeclarations.DistinctBy(o => o.Name))
                 {
-                    outputTypeProperties.Add(new TypeProperty(output.Name, output.Type, TypePropertyFlags.ReadOnly));
+                    var description = SemanticModelHelper.TryGetDescription(this, output.DeclaringOutput);
+                    outputTypeProperties.Add(new TypeProperty(output.Name, output.Type, TypePropertyFlags.ReadOnly, description));
                 }
 
                 return outputTypeProperties.ToImmutableArray();
@@ -113,8 +111,6 @@ namespace Bicep.Core.Semantics
 
         public Compilation Compilation { get; }
 
-        public RootConfiguration Configuration { get; }
-
         public ITypeManager TypeManager { get; }
 
         public IFileResolver FileResolver { get; }
@@ -125,7 +121,7 @@ namespace Bicep.Core.Semantics
 
         public ResourceMetadataCache ResourceMetadata { get; }
 
-        private LinterAnalyzer LinterAnalyzer => linterAnalyzerLazy.Value;
+        public IBicepAnalyzer LinterAnalyzer { get; }
 
         public ImmutableArray<TypeProperty> ParameterTypeProperties => this.parameterTypePropertiesLazy.Value;
 
@@ -184,14 +180,41 @@ namespace Bicep.Core.Semantics
             return AssembleDiagnostics();
         }
 
-        private IEnumerable<IDiagnostic> AssembleDiagnostics()
+        private IReadOnlyList<IDiagnostic> AssembleDiagnostics()
         {
-            return GetParseDiagnostics()
-            .Concat(GetSemanticDiagnostics())
-            .Concat(GetAnalyzerDiagnostics())
-            .OrderBy(diag => diag.Span.Position);
+            var diagnostics = GetParseDiagnostics()
+                .Concat(GetSemanticDiagnostics())
+                .Concat(GetAnalyzerDiagnostics())
+                .OrderBy(diag => diag.Span.Position);
+            var filteredDiagnostics = new List<IDiagnostic>();
+
+            var disabledDiagnosticsCache = SourceFile.DisabledDiagnosticsCache;
+            foreach (IDiagnostic diagnostic in diagnostics)
+            {
+                (int diagnosticLine, _) = TextCoordinateConverter.GetPosition(SourceFile.LineStarts, diagnostic.Span.Position);
+
+                if (diagnosticLine == 0 || !diagnostic.CanBeSuppressed())
+                {
+                    filteredDiagnostics.Add(diagnostic);
+                    continue;
+                }
+
+                if (disabledDiagnosticsCache.TryGetDisabledNextLineDirective(diagnosticLine - 1) is { } disableNextLineDirectiveEndPositionAndCodes &&
+                    disableNextLineDirectiveEndPositionAndCodes.diagnosticCodes.Contains(diagnostic.Code))
+                {
+                    continue;
+                }
+
+                filteredDiagnostics.Add(diagnostic);
+            }
+
+            return filteredDiagnostics;
         }
 
+        /// <summary>
+        /// Immediately runs diagnostics and returns true if any errors are detected
+        /// </summary>
+        /// <returns>True if analysis finds errors</returns>
         public bool HasErrors()
             => allDiagnostics.Value.Any(x => x.Level == DiagnosticLevel.Error);
 
@@ -233,7 +256,7 @@ namespace Bicep.Core.Semantics
             var resources = ImmutableArray.CreateBuilder<ResourceMetadata>();
             foreach (var resourceSymbol in ResourceSymbolVisitor.GetAllResources(Root))
             {
-                if (this.ResourceMetadata.TryLookup(resourceSymbol.DeclaringSyntax) is {} resource)
+                if (this.ResourceMetadata.TryLookup(resourceSymbol.DeclaringSyntax) is { } resource)
                 {
                     resources.Add(resource);
                 }

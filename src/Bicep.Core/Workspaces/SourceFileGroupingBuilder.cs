@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.FileSystem;
@@ -33,11 +34,14 @@ namespace Bicep.Core.Workspaces
         // uri -> syntax tree load failure 
         private readonly Dictionary<Uri, ErrorBuilderDelegate> errorBuildersByUri;
 
-        private SourceFileGroupingBuilder(IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace)
+        private readonly RootConfiguration configuration;
+
+        private SourceFileGroupingBuilder(IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, RootConfiguration configuration)
         {
             this.fileResolver = fileResolver;
             this.moduleDispatcher = moduleDispatcher;
             this.workspace = workspace;
+            this.configuration = configuration;
             this.sourceFilesByModuleDeclaration = new();
             this.errorBuildersByModuleDeclaration = new();
             this.modulesToRestore = new();
@@ -45,31 +49,32 @@ namespace Bicep.Core.Workspaces
             this.errorBuildersByUri = new();
         }
 
-        private SourceFileGroupingBuilder(IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, SourceFileGrouping current)
+        private SourceFileGroupingBuilder(IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, SourceFileGrouping current, RootConfiguration configuration)
         {
             this.fileResolver = fileResolver;
             this.moduleDispatcher = moduleDispatcher;
             this.workspace = workspace;
+            this.configuration = configuration;
 
             this.sourceFilesByModuleDeclaration = new(current.SourceFilesByModuleDeclaration);
             this.errorBuildersByModuleDeclaration = new(current.ErrorBuildersByModuleDeclaration);
 
             this.modulesToRestore = new();
-            
+
             this.sourceFilesByUri = current.SourceFiles.ToDictionary(tree => tree.FileUri);
             this.errorBuildersByUri = new();
         }
 
-        public static SourceFileGrouping Build(IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, Uri entryFileUri)
+        public static SourceFileGrouping Build(IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, Uri entryFileUri, RootConfiguration configuration)
         {
-            var builder = new SourceFileGroupingBuilder(fileResolver, moduleDispatcher, workspace);
+            var builder = new SourceFileGroupingBuilder(fileResolver, moduleDispatcher, workspace, configuration);
 
             return builder.Build(entryFileUri);
         }
 
-        public static SourceFileGrouping Rebuild(IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, SourceFileGrouping current)
+        public static SourceFileGrouping Rebuild(IModuleDispatcher moduleDispatcher, IReadOnlyWorkspace workspace, SourceFileGrouping current, RootConfiguration configuration)
         {
-            var builder = new SourceFileGroupingBuilder(current.FileResolver, moduleDispatcher, workspace, current);
+            var builder = new SourceFileGroupingBuilder(current.FileResolver, moduleDispatcher, workspace, current, configuration);
 
             foreach (var module in current.ModulesToRestore)
             {
@@ -77,12 +82,17 @@ namespace Bicep.Core.Workspaces
                 builder.errorBuildersByModuleDeclaration.Remove(module);
             }
 
-            return builder.Build(current.EntryPoint.FileUri);
+            // Rebuild source files that contains external module references restored during the inital build.
+            var sourceFilesToRebuild = current.SourceFiles
+                .Where(sourceFile => GetModuleDeclarations(sourceFile).Any(moduleDeclaration => current.ModulesToRestore.Contains(moduleDeclaration)))
+                .ToImmutableHashSet();
+
+            return builder.Build(current.EntryPoint.FileUri, sourceFilesToRebuild);
         }
 
-        private SourceFileGrouping Build(Uri entryFileUri)
+        private SourceFileGrouping Build(Uri entryFileUri, ImmutableHashSet<ISourceFile>? sourceFilesToRebuild = null)
         {
-            var sourceFile = this.PopulateRecursive(entryFileUri, null, out var entryPointLoadFailureBuilder);
+            var sourceFile = this.PopulateRecursive(entryFileUri, null, sourceFilesToRebuild, out var entryPointLoadFailureBuilder);
 
             if (sourceFile is null)
             {
@@ -150,7 +160,7 @@ namespace Bicep.Core.Workspaces
             return sourceFile;
         }
 
-        private ISourceFile? PopulateRecursive(Uri fileUri, ModuleReference? moduleReference, out ErrorBuilderDelegate? failureBuilder)
+        private ISourceFile? PopulateRecursive(Uri fileUri, ModuleReference? moduleReference, ImmutableHashSet<ISourceFile>? sourceFileToRebuild, out ErrorBuilderDelegate? failureBuilder)
         {
             var sourceFile = this.TryGetSourceFile(fileUri, moduleReference, out var getSourceFileFailureBuilder);
 
@@ -169,18 +179,18 @@ namespace Bicep.Core.Workspaces
 
             foreach (var childModule in GetModuleDeclarations(bicepFile))
             {
-                var childModuleReference = this.moduleDispatcher.TryGetModuleReference(childModule, out var parseReferenceFailureBuilder);
-                if(childModuleReference is null)
+                var childModuleReference = this.moduleDispatcher.TryGetModuleReference(childModule, this.configuration, out var parseReferenceFailureBuilder);
+                if (childModuleReference is null)
                 {
                     // module reference is not valid
                     errorBuildersByModuleDeclaration[childModule] = parseReferenceFailureBuilder ?? throw new InvalidOperationException($"Expected {nameof(IModuleDispatcher.TryGetModuleReference)} to provide failure diagnostics.");
                     continue;
                 }
 
-                var restoreStatus = this.moduleDispatcher.GetModuleRestoreStatus(childModuleReference, out var restoreErrorBuilder);
+                var restoreStatus = this.moduleDispatcher.GetModuleRestoreStatus(childModuleReference, this.configuration, out var restoreErrorBuilder);
                 if (restoreStatus != ModuleRestoreStatus.Succeeded)
                 {
-                    if(restoreStatus == ModuleRestoreStatus.Unknown)
+                    if (restoreStatus == ModuleRestoreStatus.Unknown)
                     {
                         // we have not yet attempted to restore the module, so let's do it
                         modulesToRestore.Add(childModule);
@@ -192,7 +202,7 @@ namespace Bicep.Core.Workspaces
                     continue;
                 }
 
-                var childModuleFileUri = this.moduleDispatcher.TryGetLocalModuleEntryPointUri(fileUri, childModuleReference, out var moduleGetPathFailureBuilder);
+                var childModuleFileUri = this.moduleDispatcher.TryGetLocalModuleEntryPointUri(fileUri, childModuleReference, this.configuration, out var moduleGetPathFailureBuilder);
                 if (childModuleFileUri is null)
                 {
                     // TODO: If we upgrade to netstandard2.1, we should be able to use the following to hint to the compiler that failureBuilder is non-null:
@@ -201,11 +211,12 @@ namespace Bicep.Core.Workspaces
                     continue;
                 }
 
-                // only recurse if we've not seen this module before - to avoid infinite loops
-                if (!sourceFilesByUri.TryGetValue(childModuleFileUri, out var childModuleFile))
+                // only recurse if we've not seen this module before - to avoid infinite loops, unless the module needs to be rebuilt
+                if (!sourceFilesByUri.TryGetValue(childModuleFileUri, out var childModuleFile) ||
+                    (sourceFileToRebuild is not null && sourceFileToRebuild.Contains(childModuleFile)))
                 {
-                    childModuleFile = PopulateRecursive(childModuleFileUri, childModuleReference, out var modulePopulateFailureBuilder);
-                    
+                    childModuleFile = PopulateRecursive(childModuleFileUri, childModuleReference, sourceFileToRebuild, out var modulePopulateFailureBuilder);
+
                     if (childModuleFile is null)
                     {
                         // TODO: If we upgrade to netstandard2.1, we should be able to use the following to hint to the compiler that failureBuilder is non-null:

@@ -135,10 +135,10 @@ namespace Bicep.Core.Semantics
             return parameter.Type.Value switch
             {
                 TemplateParameterType.String or TemplateParameterType.SecureString when AllowedStringLiteralsProvided() =>
-                    UnionType.Create(allowedValueTypes),
+                    TypeHelper.CreateTypeUnion(allowedValueTypes),
 
                 TemplateParameterType.Array when AllowedStringLiteralsProvided() =>
-                    new TypedArrayType(UnionType.Create(allowedValueTypes), TypeSymbolValidationFlags.Default),
+                    new TypedArrayType(TypeHelper.CreateTypeUnion(allowedValueTypes), TypeSymbolValidationFlags.Default),
 
                 _ => GetType((TemplateParameter)parameter),
             };
@@ -175,7 +175,7 @@ namespace Bicep.Core.Semantics
                 };
             }
         }
-        
+
         private static string? TryGetMetadataDescription(TemplateGenericProperty<JToken>? metadata)
         {
             if (metadata?.Value?.SelectToken(LanguageConstants.MetadataDescriptionPropertyName) is { } descriptionToken

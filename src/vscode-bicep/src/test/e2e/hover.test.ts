@@ -25,7 +25,7 @@ describe("hover", (): void => {
   });
 
   afterAll(async () => {
-    await vscode.commands.executeCommand("workbench.action.closeAllEditor");
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   });
 
   it("should reveal type signature when hovering over a parameter name", async () => {
@@ -70,8 +70,9 @@ describe("hover", (): void => {
       endLine: 108,
       endCharacter: 13,
       contents: [
-        codeblock(
-          "resource vnet\nMicrosoft.Network/virtualNetworks@2020-06-01"
+        codeblockWithDescription(
+          "resource vnet 'Microsoft.Network/virtualNetworks@2020-06-01'",
+          "[View Type Documentation](https://docs.microsoft.com/azure/templates/microsoft.network/virtualnetworks?tabs=bicep)"
         ),
       ],
     });

@@ -18,7 +18,7 @@ namespace Bicep.Core.Analyzers.Linter
 {
     public abstract class LinterRuleBase : IBicepAnalyzerRule
     {
-        private AnalyzersConfiguration configuration = new(rawConfiguration: null);
+        private AnalyzersConfiguration configuration = AnalyzersConfiguration.Empty;
 
         public LinterRuleBase(
             string code,
@@ -39,7 +39,7 @@ namespace Bicep.Core.Analyzers.Linter
 
         public string Code { get; }
 
-        public readonly string RuleConfigSection = $"{LinterAnalyzer.AnalyzerName}:rules";
+        public readonly string RuleConfigSection = $"{LinterAnalyzer.AnalyzerName}.rules";
 
         public DiagnosticLevel DiagnosticLevel { get; private set; }
 
@@ -47,6 +47,8 @@ namespace Bicep.Core.Analyzers.Linter
 
         public Uri? Uri { get; }
 
+        // If specified, adds the given diagnostic label to every diagnostic created for this rule (such as for unnecessary or obsolete code).
+        // Should be left null for most rules.
         public DiagnosticLabel? DiagnosticLabel { get; }
 
 
@@ -92,8 +94,8 @@ namespace Bicep.Core.Analyzers.Linter
                     this.AnalyzerName,
                     new TextSpan(0, 0),
                     DiagnosticLevel.Warning,
-                    LinterAnalyzer.FailedRuleCode,
-                    string.Format(CoreResources.LinterRuleExceptionMessageFormat,this.AnalyzerName, ex.Message)).AsEnumerable();
+                    LinterAnalyzer.LinterRuleInternalError,
+                    string.Format(CoreResources.LinterRuleExceptionMessageFormat, $"{this.AnalyzerName}/{this.Code}", ex.Message)).AsEnumerable();
             }
         }
 
@@ -114,7 +116,7 @@ namespace Bicep.Core.Analyzers.Linter
         /// <param name="defaultValue">The default value to use if no value is found.</param>
         /// <returns></returns>
         protected T GetConfigurationValue<T>(string key, T defaultValue) =>
-            this.configuration.GetValue($"{RuleConfigSection}:{Code}:{key}", defaultValue);
+            this.configuration.GetValue($"{RuleConfigSection}.{Code}.{key}", defaultValue);
 
         /// <summary>
         ///  Create a simple diagnostic that displays the defined Description
@@ -147,14 +149,17 @@ namespace Bicep.Core.Analyzers.Linter
                 documentationUri: this.Uri,
                 label: this.DiagnosticLabel);
 
-        protected virtual AnalyzerFixableDiagnostic CreateFixableDiagnosticForSpan(TextSpan span, CodeFix fix) =>
+        protected virtual AnalyzerFixableDiagnostic CreateFixableDiagnosticForSpan(TextSpan span, CodeFix fix, params object[] values) =>
+            CreateFixableDiagnosticForSpan(span, new[] { fix }, values);
+
+        protected virtual AnalyzerFixableDiagnostic CreateFixableDiagnosticForSpan(TextSpan span, CodeFix[] fixes, params object[] values) =>
             new(analyzerName: this.AnalyzerName,
                 span: span,
                 level: this.DiagnosticLevel,
                 code: this.Code,
-                message: this.GetMessage(),
+                message: this.GetMessage(values),
                 documentationUri: this.Uri,
-                codeFixes: new[] { fix },
+                codeFixes: fixes,
                 label: this.DiagnosticLabel);
     }
 }

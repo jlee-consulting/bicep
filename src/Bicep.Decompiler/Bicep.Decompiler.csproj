@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>Azure.Bicep.Decompiler</AssemblyName>
+    <RootNamespace>Bicep.Decompiler</RootNamespace>
+    <EnableNuget>true</EnableNuget>
+    <PackageTags>Azure;ResourceManager;ARM;Deployments;Templates;Bicep</PackageTags>
+    <Description>Bicep compiler decompile functionality</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,7 +13,6 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="System.Collections.Immutable" Version="5.0.0" />
+    <PackageReference Include="System.Collections.Immutable" Version="6.0.0" />
   </ItemGroup>
-
 </Project>

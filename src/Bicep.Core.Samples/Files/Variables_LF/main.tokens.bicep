@@ -482,6 +482,20 @@ var deploymentName = deployment().name
 //@[33:34) Dot |.|
 //@[34:38) Identifier |name|
 //@[38:39) NewLine |\n|
+var templateContentVersion = deployment().properties.template.contentVersion
+//@[0:3) Identifier |var|
+//@[4:26) Identifier |templateContentVersion|
+//@[27:28) Assignment |=|
+//@[29:39) Identifier |deployment|
+//@[39:40) LeftParen |(|
+//@[40:41) RightParen |)|
+//@[41:42) Dot |.|
+//@[42:52) Identifier |properties|
+//@[52:53) Dot |.|
+//@[53:61) Identifier |template|
+//@[61:62) Dot |.|
+//@[62:76) Identifier |contentVersion|
+//@[76:77) NewLine |\n|
 var templateLinkUri = deployment().properties.templateLink.uri
 //@[0:3) Identifier |var|
 //@[4:19) Identifier |templateLinkUri|
@@ -1325,13 +1339,6 @@ var scopesWithoutArmRepresentation = {
 //@[35:36) Assignment |=|
 //@[37:38) LeftBrace |{|
 //@[38:39) NewLine |\n|
-  tenant: tenant()
-//@[2:8) Identifier |tenant|
-//@[8:9) Colon |:|
-//@[10:16) Identifier |tenant|
-//@[16:17) LeftParen |(|
-//@[17:18) RightParen |)|
-//@[18:19) NewLine |\n|
   subscription: subscription('10b57a01-6350-4ce2-972a-6a13642f00bf')
 //@[2:14) Identifier |subscription|
 //@[14:15) Colon |:|
@@ -1352,6 +1359,39 @@ var scopesWithoutArmRepresentation = {
 //@[74:84) StringComplete |'myRgName'|
 //@[84:85) RightParen |)|
 //@[85:86) NewLine |\n|
+}
+//@[0:1) RightBrace |}|
+//@[1:3) NewLine |\n\n|
+
+var scopesWithArmRepresentation = {
+//@[0:3) Identifier |var|
+//@[4:31) Identifier |scopesWithArmRepresentation|
+//@[32:33) Assignment |=|
+//@[34:35) LeftBrace |{|
+//@[35:36) NewLine |\n|
+  tenant: tenant()
+//@[2:8) Identifier |tenant|
+//@[8:9) Colon |:|
+//@[10:16) Identifier |tenant|
+//@[16:17) LeftParen |(|
+//@[17:18) RightParen |)|
+//@[18:19) NewLine |\n|
+  subscription: subscription()
+//@[2:14) Identifier |subscription|
+//@[14:15) Colon |:|
+//@[16:28) Identifier |subscription|
+//@[28:29) LeftParen |(|
+//@[29:30) RightParen |)|
+//@[30:31) NewLine |\n|
+  resourceGroup: az.resourceGroup()
+//@[2:15) Identifier |resourceGroup|
+//@[15:16) Colon |:|
+//@[17:19) Identifier |az|
+//@[19:20) Dot |.|
+//@[20:33) Identifier |resourceGroup|
+//@[33:34) LeftParen |(|
+//@[34:35) RightParen |)|
+//@[35:36) NewLine |\n|
 }
 //@[0:1) RightBrace |}|
 //@[1:3) NewLine |\n\n|
