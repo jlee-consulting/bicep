@@ -40,7 +40,7 @@ Many of the bicep integration tests rely on baseline test assertion files that a
 
 * If you see a test failure with a message containing Windows and *nix copy commands, you have encountered such a test. You have the following options to fix the test:
   1. Manually execute the provided command in a shell. This makes sense for a single test, but is extremely tedious otherwise.
-  1. Run [`./scripts/SetBaseline.ps1`](./scripts/SetBaseline.ps1) (Windows) or [`./scripts/SetBaseline.sh`](./scripts/SetBaseline.sh) (Linux/OSX) to execute the tests in `SetBaseLine` mode. This automatically updates the baselines in bulk for failing tests.
+  1. Run [`./scripts/SetBaseline.ps1`](./scripts/SetBaseline.ps1) (Windows) or [`./scripts/set_baseline.sh`](./scripts/set_baseline.sh) (Linux/OSX) to execute the tests in `SetBaseLine` mode. This automatically updates the baselines in bulk for failing tests.
   1. You should see baseline file modifications in Git pending changes. (Make sure your Git pending changes are empty before doing so - your changes could get overwritten!).
 * Inspect the baseline assertion diffs to ensure changes are expected and match the code changes you have made. (If a pull request contains changes to baseline files that can't be explained, it will not be merged.)
 
@@ -73,8 +73,8 @@ If you have an active branch pushed to your GitHub fork, you can use the "Update
 * On the first run, you'll need to ensure you have installed all the npm packages required by the Bicep VSCode extension with the following:
   * `cd src/vscode-bicep`
   * `npm i`
-* In the [VSCode Run View](https://code.visualstudio.com/Docs/editor/debugging), select the "Bicep VSCode Extension" task, and press the "Start" button. This will launch a new VSCode window with the Bicep extension and LanguageServer containing your changes. When running on WSL, create a symbolic link in `src/vscode-bicep` named `bicepLanguageServer` to `../Bicep.LangServer/bin/Debug/net6.0`.
-* If you want the ability to put breakpoints and step through the C# code, you can also use the "Attach" run configuration once the extension host has launched, and select the Bicep LanguageServer process by searching for "bicep".
+* In the [VSCode Run View](https://code.visualstudio.com/Docs/editor/debugging), select the "VSCode Extension" task, and press the "Start" button. This will launch a new VSCode window with the Bicep extension and LanguageServer containing your changes. When running on WSL, create a symbolic link in `src/vscode-bicep` named `bicepLanguageServer` to `../Bicep.LangServer/bin/Debug/net6.0`.
+* If you want the ability to set breakpoints and step through the C# code, you can also use the "Attach" run configuration once the extension host has launched, and select the Bicep LanguageServer process by searching for "dotnet" processes with a command line containing "...\Bicep.LangServer.dll --pipe=..." (Windows) or "vscode-*.sock" (MacOs).
 
 ### Running the Bicep CLI
 

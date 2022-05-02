@@ -1,16 +1,18 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using System;
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Security.Cryptography;
-using Bicep.Core.Analyzers.Linter.Rules;
 using Bicep.Core.Diagnostics;
-using Bicep.Core.Parsing;
+using Bicep.Core.FileSystem;
 using Bicep.Core.Resources;
+using Bicep.Core.Semantics;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
-using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 
@@ -19,6 +21,9 @@ namespace Bicep.Core.IntegrationTests
     [TestClass]
     public class ScenarioTests
     {
+        [NotNull]
+        public TestContext? TestContext { get; set; }
+
         [TestMethod]
         // https://github.com/azure/bicep/issues/3636
         public void Test_Issue3636()
@@ -2813,6 +2818,67 @@ output productGroupsResourceIds array = [for rgName in rgNames: resourceId('Micr
             result.Template!.Should().HaveValueAtPath("$.outputs.productGroupsResourceIds.metadata.description", "The Resources Ids of the API management service product groups");
         }
 
+        [TestMethod]
+        // https://github.com/Azure/bicep/issues/5371
+        public void Test_Issue5371_positive_test()
+        {
+            var result = CompilationHelper.Compile(@"
+var myValue = -9223372036854775808
+");
+
+            result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+            result.Template.Should().HaveValueAtPath("$.variables.myValue", "[json('-9223372036854775808')]");
+        }
+
+        [TestMethod]
+        // https://github.com/Azure/bicep/issues/5371
+        public void Test_Issue5371_positive_test_2()
+        {
+            var result = CompilationHelper.Compile(@"
+var myValue = 9223372036854775807
+");
+
+            result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+            result.Template.Should().HaveValueAtPath("$.variables.myValue", 9223372036854775807);
+        }
+
+        [TestMethod]
+        // https://github.com/Azure/bicep/issues/5371
+        public void Test_Issue5371_positive_test_3()
+        {
+            var result = CompilationHelper.Compile(@"
+var myValue = -2147483648
+");
+
+            result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+            result.Template.Should().HaveValueAtPath("$.variables.myValue", -2147483648);
+        }
+
+        [TestMethod]
+        // https://github.com/Azure/bicep/issues/5371
+        public void Test_Issue5371_positive_test_4()
+        {
+            var result = CompilationHelper.Compile(@"
+var myValue = 2147483647
+");
+
+            result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
+            result.Template.Should().HaveValueAtPath("$.variables.myValue", 2147483647);
+        }
+
+        [DataTestMethod]
+        [DataRow("var myValue = -9223372036854775809")]
+        [DataRow("var myValue = 9223372036854775808")]
+        // https://github.com/Azure/bicep/issues/5371
+        public void Test_Issue5371_negative_tests(string fileContents)
+        {
+            var result = CompilationHelper.Compile(fileContents);
+
+            result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[] {
+                ("BCP010", DiagnosticLevel.Error, "Expected a valid 64-bit signed integer.")
+            });
+        }
+
         /// <summary>
         /// https://github.com/Azure/bicep/issues/5456
         /// </summary>
@@ -2843,7 +2909,7 @@ resource resourceA 'My.Rp/myResource@2020-01-01' = {
   }
 }
 "));
-            result.Should().GenerateATemplate().And.HaveDiagnostics(new []
+            result.Should().GenerateATemplate().And.HaveDiagnostics(new[]
             {
                 ("BCP073", DiagnosticLevel.Warning, "The property \"tags\" is read-only. Expressions cannot be assigned to read-only properties. If this is an inaccuracy in the documentation, please report it to the Bicep Team."),
                 ("BCP073", DiagnosticLevel.Warning, "The property \"properties\" is read-only. Expressions cannot be assigned to read-only properties. If this is an inaccuracy in the documentation, please report it to the Bicep Team.")
@@ -2864,7 +2930,7 @@ module mod 'module.bicep' = {
   outputs: {}
 }
 "));
-            result.Should().NotGenerateATemplate().And.HaveDiagnostics(new []
+            result.Should().NotGenerateATemplate().And.HaveDiagnostics(new[]
             {
                 ("BCP073", DiagnosticLevel.Error, "The property \"outputs\" is read-only. Expressions cannot be assigned to read-only properties.")
             });
@@ -2872,7 +2938,7 @@ module mod 'module.bicep' = {
 
         /// <summary>
         /// https://github.com/Azure/bicep/issues/3114
-        /// </summary>    
+        /// </summary>
         [TestMethod]
         public void Test_Issue3114()
         {
@@ -2881,6 +2947,98 @@ output contentVersion string = deployment().properties.template.contentVersion
 ");
             result.Template.Should().NotBeNull();
             result.Template.Should().HaveValueAtPath("$.outputs['contentVersion'].value", "[deployment().properties.template.contentVersion]");
+        }
+
+        // https://github.com/Azure/bicep/issues/4833
+        [TestMethod]
+        public void Test_Issue4833()
+        {
+            var result = CompilationHelper.Compile(@"
+param storageName string
+
+resource stg 'Microsoft.Storage/storageAccounts@2021-04-01' existing = {
+  name: storageName
+}
+
+var storage = stg
+
+output badResult object = {
+  value: storage.listAnything().keys[0].value
+}");
+
+            result.Template.Should().HaveValueAtPath("$.outputs['badResult'].value", new JObject
+            {
+                ["value"] = "[listAnything(resourceId('Microsoft.Storage/storageAccounts', parameters('storageName')), '2021-04-01').keys[0].value]",
+            });
+        }
+
+        /// <summary>
+        /// https://github.com/Azure/bicep/issues/5530
+        /// </summary>
+        [TestMethod]
+        public void Test_Issue_5530()
+        {
+            var result = CompilationHelper.Compile(@"
+targetScope = 'subscription'
+
+resource foo 'Microsoft.AAD/domainServices@2021-05-01' existing = {
+  scope: resourceGroup
+  name: 'foo'
+}
+
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01'
+");
+            result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[] {
+                ("BCP018", DiagnosticLevel.Error, "Expected the \"=\" character at this location.")
+            });
+        }
+
+        /// <summary>
+        /// https://github.com/Azure/bicep/issues/5530
+        /// </summary>
+        [TestMethod]
+        public void Test_Issue_5530_2()
+        {
+            var result = CompilationHelper.Compile(@"
+targetScope = 'tenant'
+
+resource foo 'Microsoft.Authorization/policyAssignments@2021-06-01' existing = {
+  scope: managementGroup
+  name: 'foo'
+}
+
+resource managementGroup 'Microsoft.Management/managementGroups@2021-04-01'
+");
+            result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[] {
+                ("BCP018", DiagnosticLevel.Error, "Expected the \"=\" character at this location.")
+            });
+        }
+
+        /// <summary>
+        /// https://github.com/Azure/bicep/issues/6224
+        /// </summary>
+        [TestMethod]
+        public void Test_Issue_6224()
+        {
+            var inputFile = FileHelper.SaveResultFile(TestContext, "main.bicep", @"
+var text = loadTextContent('./con')
+var text2 = loadTextContent('./con.txt')
+var base64 = loadFileAsBase64('./con')
+var base64_2 = loadFileAsBase64('./con.txt')
+
+module test './con'
+
+module test './con.txt'
+
+");
+            var fileResolver = new FileResolver();
+            var configuration = BicepTestConstants.BuiltInConfiguration;
+            var features = BicepTestConstants.Features;
+            var sourceFileGrouping = SourceFileGroupingFactory.CreateForFiles(ImmutableDictionary.Create<Uri, string>(), new Uri(inputFile), fileResolver, configuration, features);
+
+            // the bug was that the compilation would not complete
+            var compilation = new Compilation(features, BicepTestConstants.NamespaceProvider, sourceFileGrouping, configuration, BicepTestConstants.LinterAnalyzer);
+            compilation.GetEntrypointSemanticModel().GetAllDiagnostics().Should().NotBeEmpty();
         }
     }
 }
