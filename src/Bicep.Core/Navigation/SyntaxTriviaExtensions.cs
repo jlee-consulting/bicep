@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
 using Bicep.Core.Syntax;
 
 namespace Bicep.Core.Navigation
@@ -21,7 +20,7 @@ namespace Bicep.Core.Navigation
             return visitor.Result;
         }
 
-        private sealed class NavigationSearchVisitor : SyntaxVisitor
+        private sealed class NavigationSearchVisitor : CstVisitor
         {
             private readonly int offset;
             private readonly Func<SyntaxTrivia, bool> predicate;

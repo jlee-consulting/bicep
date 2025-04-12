@@ -1,65 +1,54 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.Core.Configuration;
-using Bicep.Core.Diagnostics;
-using Bicep.Core.Parsing;
-using Bicep.Core.Semantics;
-using Bicep.Core.Syntax;
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
+using Bicep.Core.Diagnostics;
+using Bicep.Core.Semantics;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.Syntax;
+using Bicep.Core.Text;
 
 namespace Bicep.Core.Analyzers.Linter.Rules
 {
     public sealed class NoHardcodedEnvironmentUrlsRule : LinterRuleBase
     {
         public new const string Code = "no-hardcoded-env-urls";
-        public readonly string DisallowedHostsKey = nameof(DisallowedHosts).ToLowerInvariant();
-        public readonly string ExcludedHostsKey = nameof(ExcludedHosts);
 
-        private ImmutableArray<string> disallowedHosts;
-        public ImmutableArray<string> DisallowedHosts => disallowedHosts;
-
-        private ImmutableArray<string> excludedHosts;
-        public ImmutableArray<string> ExcludedHosts => excludedHosts;
-
-        private int minimumHostLength;
-        private bool HasHosts;
+        // Configuration keys for bicepconfig.json
+        public readonly string DisallowedHostsKey = "disallowedHosts";
+        public readonly string ExcludedHostsKey = "excludedHosts";
 
         public NoHardcodedEnvironmentUrlsRule() : base(
             code: Code,
             description: CoreResources.EnvironmentUrlHardcodedRuleDescription,
+            LinterRuleCategory.BestPractice,
             docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         {
-        }
-
-        public override void Configure(AnalyzersConfiguration config)
-        {
-            base.Configure(config);
-
-            this.disallowedHosts = this.GetConfigurationValue(DisallowedHostsKey.ToLowerInvariant(), Array.Empty<string>()).ToImmutableArray();
-            this.excludedHosts = this.GetConfigurationValue(ExcludedHostsKey.ToLowerInvariant(), Array.Empty<string>()).ToImmutableArray();
-
-            this.minimumHostLength = this.disallowedHosts.Any() ? this.disallowedHosts.Min(h => h.Length) : 0;
-            this.HasHosts = this.disallowedHosts.Any();
         }
 
         public override string FormatMessage(params object[] values)
             => string.Format("{0} Found this disallowed host: \"{1}\"", this.Description, values.First());
 
-        public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
+        public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
         {
-            if (HasHosts)
+            if (model.SourceFile is BicepParamFile)
             {
-                var visitor = new Visitor(this.DisallowedHosts, this.minimumHostLength, this.ExcludedHosts);
-                visitor.Visit(model.SourceFile.ProgramSyntax);
-
-                return visitor.DisallowedHostSpans.Select(entry => CreateDiagnosticForSpan(entry.Key, entry.Value));
+                // The environment() function isn't available for .bicepparam files
+                return [];
             }
 
-            return Enumerable.Empty<IDiagnostic>();
+            var disallowedHosts = GetConfigurationValue(model.Configuration.Analyzers, DisallowedHostsKey.ToLowerInvariant(), Array.Empty<string>()).ToImmutableArray();
+            var excludedHosts = GetConfigurationValue(model.Configuration.Analyzers, ExcludedHostsKey.ToLowerInvariant(), Array.Empty<string>()).ToImmutableArray();
+
+            if (disallowedHosts.Any())
+            {
+                var visitor = new Visitor(disallowedHosts, disallowedHosts.Min(h => h.Length), excludedHosts);
+                visitor.Visit(model.SourceFile.ProgramSyntax);
+
+                return visitor.DisallowedHostSpans.Select(entry => CreateDiagnosticForSpan(diagnosticLevel, entry.Key, entry.Value));
+            }
+
+            return [];
         }
 
         public static IEnumerable<(TextSpan RelativeSpan, string Value)> FindHostnameMatches(string hostname, string srcText)
@@ -108,7 +97,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             }
         }
 
-        private sealed class Visitor : SyntaxVisitor
+        private sealed class Visitor : AstVisitor
         {
             public readonly Dictionary<TextSpan, string> DisallowedHostSpans = new();
             private readonly ImmutableArray<string> disallowedHosts;

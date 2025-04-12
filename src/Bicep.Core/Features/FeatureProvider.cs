@@ -1,59 +1,83 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.IO;
-using System.Threading;
+using Bicep.Core.Configuration;
+using Bicep.IO.Abstraction;
 
 namespace Bicep.Core.Features
 {
     public class FeatureProvider : IFeatureProvider
     {
-        private Lazy<string> cacheRootDirectoryLazy = new(() => GetCacheRootDirectory(Environment.GetEnvironmentVariable("BICEP_CACHE_DIRECTORY")), LazyThreadSafetyMode.PublicationOnly);
-        public string CacheRootDirectory => cacheRootDirectoryLazy.Value;
+        private readonly RootConfiguration configuration;
 
-        public bool RegistryEnabled => true;
+        private readonly IFileExplorer fileExplorer;
 
-        private Lazy<bool> symbolicNameCodegenEnabledLazy = new(() => ReadBooleanEnvVar("BICEP_SYMBOLIC_NAME_CODEGEN_EXPERIMENTAL", defaultValue: false), LazyThreadSafetyMode.PublicationOnly);
-        public bool SymbolicNameCodegenEnabled => symbolicNameCodegenEnabledLazy.Value;
+        public FeatureProvider(RootConfiguration configuration, IFileExplorer fileExplorer)
+        {
+            this.configuration = configuration;
+            this.fileExplorer = fileExplorer;
+        }
 
-        private Lazy<bool> importsEnabledLazy = new(() => ReadBooleanEnvVar("BICEP_IMPORTS_ENABLED_EXPERIMENTAL", defaultValue: false), LazyThreadSafetyMode.PublicationOnly);
-        public bool ImportsEnabled => importsEnabledLazy.Value;
+        public IDirectoryHandle CacheRootDirectory => GetCacheRootDirectory(this.configuration.CacheRootDirectory);
 
-        private Lazy<bool> resourceTypedParamsAndOutputsEnabledLazy = new(() => ReadBooleanEnvVar("BICEP_RESOURCE_TYPED_PARAMS_AND_OUTPUTS_EXPERIMENTAL", defaultValue: false), LazyThreadSafetyMode.PublicationOnly);
+        public bool SymbolicNameCodegenEnabled => this.configuration.ExperimentalFeaturesEnabled.SymbolicNameCodegen;
 
-        public bool ResourceTypedParamsAndOutputsEnabled => resourceTypedParamsAndOutputsEnabledLazy.Value;
+        public bool ExtensibilityEnabled => this.configuration.ExperimentalFeaturesEnabled.Extensibility;
+
+        public bool ExtendableParamFilesEnabled => this.configuration.ExperimentalFeaturesEnabled.ExtendableParamFiles;
+
+        public bool ResourceTypedParamsAndOutputsEnabled => this.configuration.ExperimentalFeaturesEnabled.ResourceTypedParamsAndOutputs;
 
         public string AssemblyVersion => ThisAssembly.AssemblyFileVersion;
 
+        public bool SourceMappingEnabled => this.configuration.ExperimentalFeaturesEnabled.SourceMapping;
+
+        public bool LegacyFormatterEnabled => configuration.ExperimentalFeaturesEnabled.LegacyFormatter;
+
+        public bool TestFrameworkEnabled => this.configuration.ExperimentalFeaturesEnabled.TestFramework;
+
+        public bool AssertsEnabled => configuration.ExperimentalFeaturesEnabled.Assertions;
+
         public static bool TracingEnabled => ReadBooleanEnvVar("BICEP_TRACING_ENABLED", defaultValue: false);
 
-        public static TraceVerbosity TracingVerbosity => ReadEnumEnvvar<TraceVerbosity>("BICEP_TRACING_VERBOSITY", TraceVerbosity.Basic);
+        public static TraceVerbosity TracingVerbosity => ReadEnumEnvVar("BICEP_TRACING_VERBOSITY", TraceVerbosity.Basic);
+
+        public bool WaitAndRetryEnabled => configuration.ExperimentalFeaturesEnabled.WaitAndRetry;
+
+        public bool OnlyIfNotExistsEnabled => configuration.ExperimentalFeaturesEnabled.OnlyIfNotExists;
+
+        public bool LocalDeployEnabled => configuration.ExperimentalFeaturesEnabled.LocalDeploy;
+
+        public bool ResourceInfoCodegenEnabled => this.configuration.ExperimentalFeaturesEnabled.ResourceInfoCodegen;
+
+        public bool TypedVariablesEnabled => configuration.ExperimentalFeaturesEnabled.TypedVariables;
+
+        public bool ExtensibilityV2EmittingEnabled => ModuleExtensionConfigsEnabled || ReadBooleanEnvVar("BICEP_EXTENSIBILITY_V2_EMITTING_ENABLED", defaultValue: false);
+
+        public bool ModuleExtensionConfigsEnabled => configuration.ExperimentalFeaturesEnabled.ModuleExtensionConfigs;
+
+        public bool DesiredStateConfigurationEnabled => configuration.ExperimentalFeaturesEnabled.DesiredStateConfiguration;
+
+        public bool ExternalInputFunctionEnabled => configuration.ExperimentalFeaturesEnabled.ExternalInputFunction;
 
         private static bool ReadBooleanEnvVar(string envVar, bool defaultValue)
             => bool.TryParse(Environment.GetEnvironmentVariable(envVar), out var value) ? value : defaultValue;
 
-        private static T ReadEnumEnvvar<T>(string envVar, T defaultValue) where T : struct
+        public static string ReadEnvVar(string envVar, string defaultValue)
+            => Environment.GetEnvironmentVariable(envVar) ?? defaultValue;
+
+        private static T ReadEnumEnvVar<T>(string envVar, T defaultValue) where T : struct
         {
             var str = Environment.GetEnvironmentVariable(envVar);
             return Enum.TryParse<T>(str, true, out var value) ? value : defaultValue;
         }
 
-        private static string GetDefaultCachePath()
-        {
-            string basePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        private IDirectoryHandle GetCacheRootDirectory(string? customPath) =>
+            this.GetCacheRootDirectoryFromLocalPath(string.IsNullOrWhiteSpace(customPath)
+                ? $"{Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)}/.bicep"
+                : customPath);
 
-            return Path.Combine(basePath, ".bicep");
-        }
-
-        private static string GetCacheRootDirectory(string? customPath)
-        {
-            if (string.IsNullOrWhiteSpace(customPath))
-            {
-                return GetDefaultCachePath();
-            }
-
-            return customPath;
-        }
+        private IDirectoryHandle GetCacheRootDirectoryFromLocalPath(string localPath) =>
+            this.fileExplorer.GetDirectory(IOUri.FromLocalFilePath(localPath));
     }
 }

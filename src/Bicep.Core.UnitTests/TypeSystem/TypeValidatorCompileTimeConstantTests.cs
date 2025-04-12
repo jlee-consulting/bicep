@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
 using System.Reflection;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Parsing;
@@ -169,12 +168,11 @@ namespace Bicep.Core.UnitTests.TypeSystem
 
         private static IEnumerable<object[]> GetNonExpressionData()
         {
-            yield return CreateRow("param declaration", new Parser("param foo string").Program());
+            yield return CreateRow("param declaration", new Parser("param foo 'fizz'|'buzz'|'pop'").Program());
 
             yield return CreateRow("empty file", new Parser("").Program());
         }
 
-        private static object[] CreateRow(string name, SyntaxBase expression) => new object[] { name, expression };
+        private static object[] CreateRow(string name, SyntaxBase expression) => [name, expression];
     }
 }
-

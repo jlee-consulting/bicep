@@ -1,7 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using Bicep.Core.FileSystem;
 using Bicep.Core.Modules;
+using Bicep.Core.Registry;
+using Bicep.Core.SourceGraph;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -41,12 +44,12 @@ namespace Bicep.Core.UnitTests.Modules
         public void TryParseModuleReference_ValidLocalReference_ShouldParse(string value)
         {
             var reference = Parse(value);
-            reference.Path.Should().Be(value);
+            reference.Path.ToString().Should().Be(value);
         }
 
         private static LocalModuleReference Parse(string package)
         {
-            var parsed = LocalModuleReference.TryParse(package, out var failureBuilder);
+            LocalModuleReference.TryParse(BicepTestConstants.DummyBicepFile, ArtifactType.Module, package).IsSuccess(out var parsed, out var failureBuilder);
             parsed.Should().NotBeNull();
             failureBuilder.Should().BeNull();
             return parsed!;

@@ -2,26 +2,27 @@
 // Licensed under the MIT License.
 
 import { readdirSync, existsSync } from 'fs';
-import { readFile, writeFile } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import path, { dirname, basename, extname } from 'path';
 import { env } from 'process';
 import { spawnSync } from 'child_process';
 import hljs from 'highlight.js';
-import bicep, { default as bicepLanguage } from '../src/bicep';
+import { default as bicepLanguage } from '../src/bicep';
+import { expectFileContents, baselineRecordEnabled } from './utils';
 
-async function writeBaseline(filePath: string) {
+async function generateBaseline(filePath: string) {
   const baselineBaseName = basename(filePath, extname(filePath));
   const baselineFilePath = path.join(dirname(filePath), `${baselineBaseName}.html`);
 
-  let diffBefore = '';
   const bicepFile = await readFile(filePath, { encoding: 'utf-8' });
-  try {
-    diffBefore = await readFile(baselineFilePath, { encoding: 'utf-8' });
-  } catch {} // ignore and create the baseline file anyway
 
   hljs.registerLanguage('bicep', bicepLanguage);
   const result = hljs.highlight(bicepFile, { language: 'bicep' });
-  const diffAfter = `
+  const expected = `
+<!--
+  Preview this file by prepending http://htmlpreview.github.io/? to its URL
+  e.g. http://htmlpreview.github.io/?https://raw.githubusercontent.com/Azure/bicep/main/src/highlightjs/test/baselines/${baselineBaseName}.html
+-->
 <html>
   <head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.7.2/styles/default.min.css">
@@ -33,36 +34,21 @@ ${result.value}
   </body>
 </html>`;
 
-  const output = {
-    diffBefore: diffBefore.replace(/\r\n/g, '\n'),
-    diffAfter: diffAfter.replace(/\r\n/g, '\n'),
+  return {
+    expected: expected.replace(/\r\n/g, '\n'),
     baselineFilePath,
   };
-
-  await writeFile(baselineFilePath, output.diffAfter, { encoding: 'utf-8' });
-
-  return output;
 }
 
 const baselinesDir = `${__dirname}/baselines`;
 
 const baselineFiles = readdirSync(baselinesDir)
-  .filter(p => extname(p) === '.bicep')
+  .filter(p => extname(p) === '.bicep' || extname(p) === '.bicepparam')
   .map(p => path.join(baselinesDir, p));
 
 for (const filePath of baselineFiles) {
   describe(filePath, () => {
-    let result = {
-      baselineFilePath: '',
-      diffBefore: '',
-      diffAfter: ''
-    };
-
-    beforeAll(async () => {
-      result = await writeBaseline(filePath);
-    });
-
-    if (!basename(filePath).startsWith('bad_')) {
+    if (!basename(filePath).startsWith('invalid_')) {
       // skip the invalid files - we don't expect them to compile
 
       it('can be compiled', async () => {
@@ -72,8 +58,12 @@ for (const filePath of baselineFiles) {
           fail(`Unable to find '${cliCsproj}'`);
           return;
         }
-
-        const result = spawnSync(`dotnet`, ['run', '-p', cliCsproj, 'build', '--stdout', filePath], { encoding: 'utf-8' });
+        
+        const subCommand = extname(filePath) === '.bicepparam' ? 'build-params' : 'build';
+        const result = spawnSync(`dotnet`, ['run', '-p', cliCsproj, subCommand, '--stdout', filePath], {
+          encoding: 'utf-8',
+          env,
+        });
 
         // NOTE - if stderr or status are null, this indicates we were unable to invoke the exe (missing file, or hasn't had 'chmod +x' run)
         expect(result.error).toBeUndefined();
@@ -82,8 +72,17 @@ for (const filePath of baselineFiles) {
       });
     }
 
-    it('baseline matches expected', () => {
-      expect(result.diffBefore).toEqual(result.diffAfter);
+    it('baseline matches expected', async () => {
+      const { expected, baselineFilePath } = await generateBaseline(filePath);
+
+      await expectFileContents(baselineFilePath, expected);
     });
   });
 }
+
+describe('Test suite', () => {
+  it('should not succeed if BASELINE_RECORD is set to true', () => {
+    // This test just ensures the suite doesn't pass in 'record' mode
+    expect(baselineRecordEnabled).toBeFalsy();
+  });
+});

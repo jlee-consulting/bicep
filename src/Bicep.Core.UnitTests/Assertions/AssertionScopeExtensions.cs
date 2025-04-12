@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Collections.Generic;
-using System.Linq;
+using System.Collections.Immutable;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Parsing;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.Text;
 using Bicep.Core.UnitTests.Utils;
-using Bicep.Core.Workspaces;
 using FluentAssertions.Execution;
 
 namespace Bicep.Core.UnitTests.Assertions
@@ -17,7 +17,13 @@ namespace Bicep.Core.UnitTests.Assertions
         /// <summary>
         /// Prints the program syntax with line numbers and a cursor if a test fails in the given assertion scope.
         /// </summary>
-        public static AssertionScope WithVisualCursor(this AssertionScope assertionScope, BicepFile bicepFile, IPositionable cursorPosition)
+        public static AssertionScope WithVisualCursor(this AssertionScope assertionScope, BicepSourceFile bicepFile, int cursor)
+            => WithVisualCursor(assertionScope, bicepFile, new TextSpan(cursor, 0));
+
+        /// <summary>
+        /// Prints the program syntax with line numbers and a cursor if a test fails in the given assertion scope.
+        /// </summary>
+        public static AssertionScope WithVisualCursor(this AssertionScope assertionScope, BicepSourceFile bicepFile, IPositionable cursorPosition)
             => WithAnnotatedSource(
                 assertionScope,
                 bicepFile,
@@ -27,7 +33,7 @@ namespace Bicep.Core.UnitTests.Assertions
         /// <summary>
         /// Prints the program syntax with line numbers and diagnostics if a test fails in the given assertion scope.
         /// </summary>
-        public static AssertionScope WithVisualDiagnostics(this AssertionScope assertionScope, BicepFile bicepFile, IEnumerable<IDiagnostic> diagnostics)
+        public static AssertionScope WithVisualDiagnostics(this AssertionScope assertionScope, BicepSourceFile bicepFile, IEnumerable<IDiagnostic> diagnostics)
             => WithAnnotatedSource(
                 assertionScope,
                 bicepFile,
@@ -37,7 +43,7 @@ namespace Bicep.Core.UnitTests.Assertions
         /// <summary>
         /// Prints the entire program syntax with line numbers if a test fails in the given assertion scope.
         /// </summary>
-        public static AssertionScope WithFullSource(this AssertionScope assertionScope, BicepFile bicepFile)
+        public static AssertionScope WithFullSource(this AssertionScope assertionScope, BicepSourceFile bicepFile)
         {
             assertionScope.AddReportable(
                 "source",
@@ -46,11 +52,20 @@ namespace Bicep.Core.UnitTests.Assertions
             return assertionScope;
         }
 
-        public static AssertionScope WithAnnotatedSource(AssertionScope assertionScope, BicepFile bicepFile, string contextName, IEnumerable<PrintHelper.Annotation> annotations)
+        public static AssertionScope WithAnnotatedSource(AssertionScope assertionScope, BicepSourceFile bicepFile, string contextName, IEnumerable<PrintHelper.Annotation> annotations)
         {
             assertionScope.AddReportable(
                 contextName,
                 () => PrintHelper.PrintWithAnnotations(bicepFile, annotations, 1, true));
+
+            return assertionScope;
+        }
+
+        public static AssertionScope WithAnnotatedSource(AssertionScope assertionScope, string fileText, ImmutableArray<int> lineStarts, string contextName, IEnumerable<PrintHelper.Annotation> annotations)
+        {
+            assertionScope.AddReportable(
+                contextName,
+                () => PrintHelper.PrintWithAnnotations(fileText, lineStarts, annotations, 1, true));
 
             return assertionScope;
         }

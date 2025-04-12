@@ -8,7 +8,6 @@ using Bicep.Core.UnitTests.Utils;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Linq;
 
 namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
 {
@@ -29,7 +28,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
                     .Should().HaveCount(1, "Each testcase should contain a single output with an expression to test")
                     .And.Subject.First();
 
-                var secrets = FindPossibleSecretsVisitor.FindPossibleSecrets(semanticModel, output.Value);
+                var secrets = FindPossibleSecretsVisitor.FindPossibleSecretsInExpression(semanticModel, output.Value);
                 secrets.Select(s => s.FoundMessage).Should().BeEquivalentTo(expectedFoundMessages);
             }
         }
@@ -40,7 +39,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
 
             output badResult string = 'this is the value ${secureParam}'
         ",
-            "secure parameter 'secureParam'"
+            "secure value 'secureParam'"
         )]
         [DataRow(@"
             @secure()
@@ -52,7 +51,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
                 }
             }
         ",
-            "secure parameter 'secureParam'"
+            "secure value 'secureParam'"
         )]
         [DataRow(@"
             @secure()
@@ -62,7 +61,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
 
             output test string = 'this is the value ${secureParam.value}'
         ",
-            "secure parameter 'secureParam'"
+            "secure value 'secureParam'"
         )]
         [DataRow(@"
             param nonSecureParam object = {
@@ -106,7 +105,6 @@ namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
                 output test = v.listAnything().keys[0].value
             "
             )]
-        /* TODO: blocked by https://github.com/Azure/bicep/issues/4833
         [DataRow(@"
                 param storageName string
 
@@ -120,8 +118,8 @@ namespace Bicep.Core.UnitTests.Diagnostics.Linter.Common
                   value: storage.listAnything().keys[0].value
                 }
             ",
-            "Outputs should not contain secrets. function 'listAnything'"
-        )]*/
+            "function 'listAnything'"
+        )]
         [DataRow(
             @"
                 param storageName string

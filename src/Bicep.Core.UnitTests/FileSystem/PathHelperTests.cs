@@ -1,8 +1,5 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
 using Bicep.Core.FileSystem;
 using FluentAssertions;
@@ -76,6 +73,13 @@ namespace Bicep.Core.UnitTests.FileSystem
         }
 
         [DataTestMethod]
+        [DynamicData(nameof(GetFilePathToFileUrlData), DynamicDataSourceType.Method, DynamicDataDisplayName = nameof(GetDisplayName))]
+        public void FilePathToFileUrl_ShouldResolveCorrectly(string path, string expectedPath)
+        {
+            PathHelper.FilePathToFileUrl(path).LocalPath.Should().Be(expectedPath);
+        }
+
+        [DataTestMethod]
         [DynamicData(nameof(GetBuildOutputPathData), DynamicDataSourceType.Method, DynamicDataDisplayName = nameof(GetDisplayName))]
         public void GetDefaultBuildOutputPath_ShouldChangeExtensionCorrectly(string path, string expectedPath)
         {
@@ -87,6 +91,24 @@ namespace Bicep.Core.UnitTests.FileSystem
         public void GetDefaultDecompileOutputPath_ShouldChangeExtensionCorrectly(string path, string expectedPath)
         {
             PathHelper.GetDefaultDecompileOutputPath(path).Should().Be(expectedPath);
+        }
+
+        [DataRow("file:///path/to/source.txt", "file:///path/to/target.exe", "target.exe")]
+        [DataRow("file:///path/to/source.txt", "file:///path/target.exe", "../target.exe")]
+        [DataRow("file:///path/source.txt", "file:///path/to/target.exe", "to/target.exe")]
+        [DataRow("inmemory:///path/source.txt", "inmemory:///path/to/target.exe", "to/target.exe")]
+        [DataRow("file:///samefile.txt", "file:///samefile.txt", "samefile.txt")]
+        [TestMethod]
+        public void GetRelativePath_should_return_expected_output(string source, string target, string expected)
+        {
+            PathHelper.GetRelativePath(new Uri(source), new Uri(target)).Should().Be(expected);
+        }
+
+        [TestMethod]
+        public void GetRelativePath_should_fail_for_unexpected_input()
+        {
+            FluentActions.Invoking(() => PathHelper.GetRelativePath(new Uri("file:///foo.txt"), new Uri("inmemory:///bar.txt")))
+                .Should().Throw<InvalidOperationException>().WithMessage("Source scheme 'file' does not match target scheme 'inmemory'");
         }
 
         public static string GetDisplayName(MethodInfo info, object[] row)
@@ -111,6 +133,12 @@ namespace Bicep.Core.UnitTests.FileSystem
             yield return CreateFullPathRow(@"C:\test\foo.bicep");
             yield return CreateFullPathRow(@"\\reddog\Builds\branches\git_mgmt_governance_blueprint_master\test.bicep");
             yield return CreateFullPathRow(@"C:\test");
+            yield return CreateFullPathRow(@"C:\te st");
+            yield return CreateFullPathRow(@"C:\te%20st");
+            yield return CreateFullPathRow(@"C:\test\te%20st");
+            yield return CreateFullPathRow(@"C:\test\te st");
+            yield return CreateFullPathRow(@"C:\test\te%20st\foo.bicep");
+            yield return CreateFullPathRow(@"C:\test\te st\foo.bicep");
 
             yield return CreateRelativePathRow(@"test");
             yield return CreateRelativePathRow(@"test.bicep");
@@ -128,6 +156,38 @@ namespace Bicep.Core.UnitTests.FileSystem
             yield return CreateRelativePathRow(@"folder/test.bicep");
             yield return CreateRelativePathRow(@"deeper/folder/test.bicep");
             yield return CreateRelativePathRow(@"/deeper/folder/test.bicep");
+#endif
+        }
+
+        private static IEnumerable<object[]> GetFilePathToFileUrlData()
+        {
+            // local function
+            object[] CreateFullPathRow(string path) => CreateRow(path, path);
+
+#if WINDOWS_BUILD
+            yield return CreateFullPathRow(@"C:\test");
+            yield return CreateFullPathRow(@"C:\te st");
+            yield return CreateFullPathRow(@"C:\te%20st");
+            yield return CreateFullPathRow(@"C:\test\te%20st");
+            yield return CreateFullPathRow(@"C:\test\te st");
+            yield return CreateFullPathRow(@"C:\test\te%20st\foo.bicep");
+            yield return CreateFullPathRow(@"C:\test\te st\foo.bicep");
+            yield return CreateFullPathRow(@"C:\test\te%20st\foo.bicep");
+            yield return CreateFullPathRow(@"C:\test\te%2Ast\foo.bicep");
+            yield return CreateFullPathRow(@"C:\test\te%00st\foo.bicep");
+            yield return CreateFullPathRow(@"C:\test\te%ZZst\foo.bicep");
+#else
+            yield return CreateFullPathRow(@"/lib/var/test");
+            yield return CreateFullPathRow(@"/lib/var/te st");
+            yield return CreateFullPathRow(@"/lib/var/te%20st");
+            yield return CreateFullPathRow(@"/lib/var/test/te%20st");
+            yield return CreateFullPathRow(@"/lib/var/test/te st");
+            yield return CreateFullPathRow(@"/lib/var/test/te%20st/foo.bicep");
+            yield return CreateFullPathRow(@"/lib/var/test/te st/foo.bicep");
+            yield return CreateFullPathRow(@"/lib/var/test/te%20st/foo.bicep");
+            yield return CreateFullPathRow(@"/lib/var/test/te%2Ast/foo.bicep");
+            yield return CreateFullPathRow(@"/lib/var/test/te%00st/foo.bicep");
+            yield return CreateFullPathRow(@"/lib/var/test/te%ZZst/foo.bicep");
 #endif
         }
 
@@ -167,7 +227,7 @@ namespace Bicep.Core.UnitTests.FileSystem
 #endif
         }
 
-        private static object[] CreateRow(string input, string expectedOutput) => new object[] { input, expectedOutput };
+        private static object[] CreateRow(string input, string expectedOutput) => [input, expectedOutput];
     }
 }
 

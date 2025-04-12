@@ -1,37 +1,38 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
-using System.Linq;
+
 using Bicep.Core;
 using Bicep.Core.Parsing;
+using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
-using Bicep.Core.Workspaces;
+using Bicep.Core.Text;
+using Bicep.Core.TypeSystem;
 using Bicep.LanguageServer.Extensions;
 using OmniSharp.Extensions.LanguageServer.Protocol.Document;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 
 namespace Bicep.LanguageServer
 {
-    public class SemanticTokenVisitor : SyntaxVisitor
+    public class SemanticTokenVisitor : CstVisitor
     {
-        private readonly List<(IPositionable positionable, SemanticTokenType tokenType)> tokens;
+        private readonly SemanticModel model;
+        private readonly List<(IPositionable positionable, SemanticTokenType tokenType)> tokens = new();
 
-        private SemanticTokenVisitor()
+        private SemanticTokenVisitor(SemanticModel model)
         {
-            this.tokens = new List<(IPositionable, SemanticTokenType)>();
+            this.model = model;
         }
 
-        public static void BuildSemanticTokens(SemanticTokensBuilder builder, BicepFile bicepFile)
+        public static void BuildSemanticTokens(SemanticTokensBuilder builder, SemanticModel model)
         {
-            var visitor = new SemanticTokenVisitor();
+            var visitor = new SemanticTokenVisitor(model);
 
-            visitor.Visit(bicepFile.ProgramSyntax);
+            visitor.Visit(model.SourceFile.ProgramSyntax);
 
             // the builder is fussy about ordering. tokens are visited out of order, we need to call build after visiting everything
             foreach (var (positionable, tokenType) in visitor.tokens.OrderBy(t => t.positionable.Span.Position))
             {
-                var tokenRanges = positionable.ToRangeSpanningLines(bicepFile.LineStarts);
+                var tokenRanges = positionable.ToRangeSpanningLines(model.SourceFile.LineStarts);
                 foreach (var tokenRange in tokenRanges)
                 {
                     builder.Push(tokenRange.Start.Line, tokenRange.Start.Character, tokenRange.End.Character - tokenRange.Start.Character, tokenType as SemanticTokenType?);
@@ -74,6 +75,12 @@ namespace Bicep.LanguageServer
             base.VisitBooleanLiteralSyntax(syntax);
         }
 
+        public override void VisitBooleanTypeLiteralSyntax(BooleanTypeLiteralSyntax syntax)
+        {
+            AddTokenType(syntax.Literal, SemanticTokenType.Keyword);
+            base.VisitBooleanTypeLiteralSyntax(syntax);
+        }
+
         public override void VisitFunctionCallSyntax(FunctionCallSyntax syntax)
         {
             // We need to set token types for OpenParen and CloseParen in case the function call
@@ -100,6 +107,12 @@ namespace Bicep.LanguageServer
             base.VisitNullLiteralSyntax(syntax);
         }
 
+        public override void VisitNullTypeLiteralSyntax(NullTypeLiteralSyntax syntax)
+        {
+            AddTokenType(syntax.NullKeyword, SemanticTokenType.Keyword);
+            base.VisitNullTypeLiteralSyntax(syntax);
+        }
+
         public override void VisitIntegerLiteralSyntax(IntegerLiteralSyntax syntax)
         {
             AddTokenType(syntax.Literal, SemanticTokenType.Number);
@@ -114,7 +127,7 @@ namespace Bicep.LanguageServer
             }
             else
             {
-                AddTokenType(syntax.Key, SemanticTokenType.Method);
+                AddTokenType(syntax.Key, SemanticTokenType.TypeParameter);
             }
             Visit(syntax.Colon);
             Visit(syntax.Value);
@@ -134,11 +147,25 @@ namespace Bicep.LanguageServer
             base.VisitParameterDeclarationSyntax(syntax);
         }
 
+        public override void VisitTypeDeclarationSyntax(TypeDeclarationSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            AddTokenType(syntax.Name, SemanticTokenType.Type);
+            base.VisitTypeDeclarationSyntax(syntax);
+        }
+
         public override void VisitPropertyAccessSyntax(PropertyAccessSyntax syntax)
         {
             AddTokenType(syntax.Dot, SemanticTokenType.Operator);
             AddTokenType(syntax.PropertyName, SemanticTokenType.Property);
             base.VisitPropertyAccessSyntax(syntax);
+        }
+
+        public override void VisitTypePropertyAccessSyntax(TypePropertyAccessSyntax syntax)
+        {
+            AddTokenType(syntax.Dot, SemanticTokenType.Operator);
+            AddTokenType(syntax.PropertyName, GetSemanticTokenForPotentialTypeSymbol(model.GetSymbolInfo(syntax)));
+            base.VisitTypePropertyAccessSyntax(syntax);
         }
 
         public override void VisitArrayAccessSyntax(ArrayAccessSyntax syntax)
@@ -167,6 +194,13 @@ namespace Bicep.LanguageServer
             AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
             AddTokenType(syntax.Name, SemanticTokenType.Variable);
             base.VisitModuleDeclarationSyntax(syntax);
+        }
+
+        public override void VisitTestDeclarationSyntax(TestDeclarationSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            AddTokenType(syntax.Name, SemanticTokenType.Variable);
+            base.VisitTestDeclarationSyntax(syntax);
         }
 
         public override void VisitIfConditionSyntax(IfConditionSyntax syntax)
@@ -243,6 +277,9 @@ namespace Bicep.LanguageServer
                 case TokenType.MultilineString:
                     AddStringToken(token);
                     break;
+                case TokenType.Comma:
+                    AddTokenType(token, SemanticTokenType.Operator);
+                    break;
                 default:
                     break;
             }
@@ -271,12 +308,6 @@ namespace Bicep.LanguageServer
             base.VisitResourceTypeSyntax(syntax);
         }
 
-        public override void VisitSimpleTypeSyntax(SimpleTypeSyntax syntax)
-        {
-            AddTokenType(syntax.Identifier, SemanticTokenType.Type);
-            base.VisitSimpleTypeSyntax(syntax);
-        }
-
         public override void VisitUnaryOperationSyntax(UnaryOperationSyntax syntax)
         {
             AddTokenType(syntax.OperatorToken, SemanticTokenType.Operator);
@@ -285,8 +316,21 @@ namespace Bicep.LanguageServer
 
         public override void VisitVariableAccessSyntax(VariableAccessSyntax syntax)
         {
-            AddTokenType(syntax.Name, SemanticTokenType.Variable);
+            AddTokenType(syntax.Name, GetSemanticTokenForPotentialTypeSymbol(model.GetSymbolInfo(syntax)));
             base.VisitVariableAccessSyntax(syntax);
+        }
+
+        public override void VisitTypeVariableAccessSyntax(TypeVariableAccessSyntax syntax)
+        {
+            AddTokenType(syntax.Name, GetSemanticTokenForPotentialTypeSymbol(model.GetSymbolInfo(syntax)));
+            base.VisitTypeVariableAccessSyntax(syntax);
+        }
+
+        public override void VisitMetadataDeclarationSyntax(MetadataDeclarationSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            AddTokenType(syntax.Name, SemanticTokenType.Variable);
+            base.VisitMetadataDeclarationSyntax(syntax);
         }
 
         public override void VisitVariableDeclarationSyntax(VariableDeclarationSyntax syntax)
@@ -302,13 +346,109 @@ namespace Bicep.LanguageServer
             base.VisitTargetScopeSyntax(syntax);
         }
 
-        public override void VisitImportDeclarationSyntax(ImportDeclarationSyntax syntax)
+        public override void VisitExtensionDeclarationSyntax(ExtensionDeclarationSyntax syntax)
         {
             AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
-            AddTokenType(syntax.ProviderName, SemanticTokenType.Variable);
-            AddContextualKeyword(syntax.AsKeyword, LanguageConstants.AsKeyword);
-            AddTokenType(syntax.AliasName, SemanticTokenType.Variable);
-            base.VisitImportDeclarationSyntax(syntax);
+            this.Visit(syntax.SpecificationString);
+            this.Visit(syntax.WithClause);
+            this.Visit(syntax.AsClause);
         }
+
+        public override void VisitExtensionWithClauseSyntax(ExtensionWithClauseSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            this.Visit(syntax.Config);
+        }
+
+        public override void VisitAliasAsClauseSyntax(AliasAsClauseSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            AddTokenType(syntax.Alias, SemanticTokenType.Namespace);
+        }
+
+        public override void VisitExtensionConfigAssignmentSyntax(ExtensionConfigAssignmentSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            this.Visit(syntax.SpecificationString);
+            this.Visit(syntax.WithClause);
+        }
+
+        public override void VisitCompileTimeImportDeclarationSyntax(CompileTimeImportDeclarationSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            base.VisitCompileTimeImportDeclarationSyntax(syntax);
+        }
+
+        public override void VisitImportedSymbolsListItemSyntax(ImportedSymbolsListItemSyntax syntax)
+        {
+            if (syntax.OriginalSymbolName is IdentifierSyntax)
+            {
+                AddTokenType(syntax.OriginalSymbolName, model.GetSymbolInfo(syntax)?.Kind switch
+                {
+                    Core.Semantics.SymbolKind.TypeAlias => SemanticTokenType.Type,
+                    _ => SemanticTokenType.Variable,
+                });
+            }
+
+            base.VisitImportedSymbolsListItemSyntax(syntax);
+        }
+
+        public override void VisitWildcardImportSyntax(WildcardImportSyntax syntax)
+        {
+            AddTokenType(syntax.Wildcard, SemanticTokenType.Variable);
+            base.VisitWildcardImportSyntax(syntax);
+        }
+
+        public override void VisitCompileTimeImportFromClauseSyntax(CompileTimeImportFromClauseSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            base.VisitCompileTimeImportFromClauseSyntax(syntax);
+        }
+
+        public override void VisitUsingDeclarationSyntax(UsingDeclarationSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            base.VisitUsingDeclarationSyntax(syntax);
+        }
+
+        public override void VisitParameterAssignmentSyntax(ParameterAssignmentSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            AddTokenType(syntax.Name, SemanticTokenType.Variable);
+            base.VisitParameterAssignmentSyntax(syntax);
+        }
+
+        public override void VisitAssertDeclarationSyntax(AssertDeclarationSyntax syntax)
+        {
+            AddTokenType(syntax.Keyword, SemanticTokenType.Keyword);
+            AddTokenType(syntax.Name, SemanticTokenType.Variable);
+            base.VisitAssertDeclarationSyntax(syntax);
+        }
+
+        public override void VisitObjectTypePropertySyntax(ObjectTypePropertySyntax syntax)
+        {
+            if (syntax.Key is StringSyntax @string)
+            {
+                Visit(@string);
+            }
+            else
+            {
+                AddTokenType(syntax.Key, SemanticTokenType.TypeParameter);
+            }
+            Visit(syntax.Colon);
+            Visit(syntax.Value);
+        }
+
+        private static SemanticTokenType GetSemanticTokenForPotentialTypeSymbol(Symbol? symbol) =>
+            symbol switch
+            {
+                PropertySymbol property => GetSemanticTokenForPotentialTypeSymbol(property.Type),
+                TypeSymbol or
+                TypeAliasSymbol or
+                AmbientTypeSymbol or
+                ImportedTypeSymbol => SemanticTokenType.Type,
+                INamespaceSymbol => SemanticTokenType.Namespace,
+                _ => SemanticTokenType.Variable,
+            };
     }
 }

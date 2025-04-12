@@ -2,12 +2,12 @@
 // Licensed under the MIT License.
 
 import { IActionContext } from "@microsoft/vscode-azext-utils";
-import vscode from "vscode";
+import vscode, { Uri } from "vscode";
 import { Command } from "../types";
 
 const paramsCode =
   "param location string = resourceGroup().location\n" +
-  "param appPlanName string = 'myAppPlanName'\n" +
+  "param appPlanName string = '${uniqueString(resourceGroup().id)}plan'\n" +
   "\n";
 
 const resourcesCode = `
@@ -35,12 +35,13 @@ export class WalkthroughCopyToClipboardCommand implements Command {
 
   public async execute(
     context: IActionContext,
-    args: { step: "params" | "resources" }
+    _documentUri: Uri,
+    args: { step: "params" | "resources" },
   ): Promise<void> {
     const step = args.step;
     context.telemetry.properties.step = step;
 
     const code = step === "params" ? paramsCode : resourcesCode;
-    vscode.env.clipboard.writeText(code);
+    await vscode.env.clipboard.writeText(code);
   }
 }

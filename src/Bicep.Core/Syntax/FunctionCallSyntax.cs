@@ -1,15 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
 using Bicep.Core.Navigation;
 using Bicep.Core.Parsing;
+using Bicep.Core.Text;
 
 namespace Bicep.Core.Syntax
 {
-    public class FunctionCallSyntax : FunctionCallSyntaxBase, ISymbolReference
+    public class FunctionCallSyntax : FunctionCallSyntaxBase
     {
-        public FunctionCallSyntax(IdentifierSyntax name, Token openParen, IEnumerable<FunctionArgumentSyntax> arguments, Token closeParen)
-            : base(name, openParen, arguments, closeParen)
+        public FunctionCallSyntax(IdentifierSyntax name, Token openParen, IEnumerable<SyntaxBase> children, SyntaxBase closeParen)
+            : base(name, openParen, children, closeParen)
         {
         }
 

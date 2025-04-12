@@ -1,25 +1,18 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
-using Bicep.Core.UnitTests.Assertions;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using FluentAssertions;
-using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using System.IO;
-using System.Reflection;
-using Bicep.Core.UnitTests.Utils;
-using Bicep.Core.FileSystem;
-using Bicep.Core.Workspaces;
-using Bicep.Core.Semantics;
-using FluentAssertions.Execution;
+using System.Globalization;
 using System.Text.RegularExpressions;
-using Bicep.Decompiler.Exceptions;
-using Bicep.Decompiler;
-using Bicep.Core.Registry;
+using Bicep.Core.FileSystem;
 using Bicep.Core.UnitTests;
-using Bicep.Core.Analyzers.Linter;
+using Bicep.Core.UnitTests.Assertions;
+using Bicep.Core.UnitTests.Baselines;
+using Bicep.Core.UnitTests.Utils;
+using Bicep.Decompiler;
+using Bicep.Decompiler.Exceptions;
+using FluentAssertions;
+using FluentAssertions.Execution;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Bicep.Core.IntegrationTests
 {
@@ -29,135 +22,86 @@ namespace Bicep.Core.IntegrationTests
         [NotNull]
         public TestContext? TestContext { get; set; }
 
-        public class ExampleData
-        {
-            public ExampleData(string bicepStreamName, string jsonStreamName, string outputFolderName)
-            {
-                BicepStreamName = bicepStreamName;
-                JsonStreamName = jsonStreamName;
-                OutputFolderName = outputFolderName;
-            }
-
-            public string BicepStreamName { get; }
-
-            public string JsonStreamName { get; }
-
-            public string OutputFolderName { get; }
-
-            public static string GetDisplayName(MethodInfo info, object[] data) => ((ExampleData)data[0]).JsonStreamName!;
-        }
-
-        private static IEnumerable<object[]> GetWorkingExampleData()
-        {
-            const string pathPrefix = "Working/";
-            const string bicepExtension = ".bicep";
-
-            // Only return files whose path segment length is 3 as entry files to avoid decompiling nested templates twice.
-            var entryStreamNames = typeof(DecompilationTests).Assembly.GetManifestResourceNames()
-                .Where(p => p.StartsWith(pathPrefix, StringComparison.Ordinal) && p.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Length == 3);
-
-            foreach (var streamName in entryStreamNames)
-            {
-                var extension = Path.GetExtension(streamName);
-                if (StringComparer.OrdinalIgnoreCase.Equals(extension, bicepExtension))
-                {
-                    continue;
-                }
-
-                var outputFolderName = streamName[pathPrefix.Length..^extension.Length].Replace('/', '_');
-                var exampleData = new ExampleData(Path.ChangeExtension(streamName, bicepExtension), streamName, outputFolderName);
-
-                yield return new object[] { exampleData };
-            }
-        }
-
-        [TestMethod]
-        public void ExampleData_should_return_a_number_of_records()
-        {
-            GetWorkingExampleData().Should().HaveCountGreaterOrEqualTo(10, "sanity check to ensure we're finding examples to test");
-        }
+        private static BicepDecompiler CreateDecompiler()
+            => ServiceBuilder.Create(s => s.WithEmptyAzResources()).GetDecompiler();
 
         [DataTestMethod]
-        [DynamicData(nameof(GetWorkingExampleData), DynamicDataSourceType.Method, DynamicDataDisplayNameDeclaringType = typeof(ExampleData), DynamicDataDisplayName = nameof(ExampleData.GetDisplayName))]
+        [EmbeddedFilesTestData(@"Files/Working/.*\.json")]
         [TestCategory(BaselineHelper.BaselineTestCategory)]
-        public void Decompiler_generates_expected_bicep_files_with_diagnostics(ExampleData example)
+        public async Task Decompiler_generates_expected_bicep_files_with_diagnostics(EmbeddedFile embeddedJson)
         {
-            // save all the files in the containing directory to disk so that we can test module resolution
-            var parentStream = Path.GetDirectoryName(example.BicepStreamName)!.Replace('\\', '/');
-            var outputDirectory = FileHelper.SaveEmbeddedResourcesWithPathPrefix(TestContext, typeof(DecompilationTests).Assembly, parentStream);
-            var jsonFileName = Path.Combine(outputDirectory, Path.GetFileName(example.JsonStreamName));
-            var nsProvider = BicepTestConstants.NamespaceProvider;
+            var baselineFolder = BaselineFolder.BuildOutputFolder(TestContext, embeddedJson);
+            var jsonFile = baselineFolder.EntryFile;
 
-            var jsonUri = PathHelper.FilePathToFileUrl(jsonFileName);
-            var decompiler = new TemplateDecompiler(BicepTestConstants.Features, nsProvider, new FileResolver(), BicepTestConstants.RegistryProvider, BicepTestConstants.ConfigurationManager);
-            var (bicepUri, filesToSave) = decompiler.DecompileFileWithModules(jsonUri, PathHelper.ChangeToBicepExtension(jsonUri));
+            var jsonUri = PathHelper.FilePathToFileUrl(jsonFile.OutputFilePath);
+            var decompiler = ServiceBuilder.Create().GetDecompiler();
+            var (bicepUri, filesToSave) = await decompiler.Decompile(PathHelper.ChangeToBicepExtension(jsonUri), jsonFile.EmbeddedFile.Contents);
 
-            var bicepFiles = filesToSave.Select(kvp => SourceFileFactory.CreateBicepFile(kvp.Key, kvp.Value));
-            var workspace = new Workspace();
-            workspace.UpsertSourceFiles(bicepFiles);
-
-            var dispatcher = new ModuleDispatcher(BicepTestConstants.RegistryProvider);
-            var configuration = BicepTestConstants.BuiltInConfigurationWithAnalyzersDisabled;
-            var sourceFileGrouping = SourceFileGroupingBuilder.Build(BicepTestConstants.FileResolver, dispatcher, workspace, bicepUri, configuration);
-            var compilation = new Compilation(BicepTestConstants.Features, nsProvider, sourceFileGrouping, configuration, new LinterAnalyzer(configuration));
+            var compilation = new ServiceBuilder().BuildCompilation(filesToSave, PathHelper.ChangeToBicepExtension(jsonUri));
             var diagnosticsByBicepFile = compilation.GetAllDiagnosticsByBicepFile();
 
             using (new AssertionScope())
             {
-                foreach (var bicepFile in sourceFileGrouping.SourceFiles.OfType<BicepFile>())
+                foreach (var (bicepFile, diagnostics) in diagnosticsByBicepFile)
                 {
-                    var exampleExists = File.Exists(bicepFile.FileUri.LocalPath);
-                    exampleExists.Should().BeTrue($"Generated example \"{bicepFile.FileUri.LocalPath}\" should be checked in");
+                    var baselineFile = baselineFolder.GetFileOrEnsureCheckedIn(bicepFile.Uri);
+                    var bicepOutput = filesToSave[bicepFile.Uri];
 
-                    var diagnostics = diagnosticsByBicepFile[bicepFile];
-                    var bicepOutput = filesToSave[bicepFile.FileUri];
+                    var sourceTextWithDiags = OutputHelper.AddDiagsToSourceText(bicepOutput, "\n", diagnostics, diag => OutputHelper.GetDiagLoggingString(bicepOutput, baselineFolder.OutputFolderPath, diag));
 
-                    var sourceTextWithDiags = OutputHelper.AddDiagsToSourceText(bicepOutput, "\n", diagnostics, diag => OutputHelper.GetDiagLoggingString(bicepOutput, outputDirectory, diag));
-                    File.WriteAllText(bicepFile.FileUri.LocalPath + ".actual", sourceTextWithDiags);
-
-                    sourceTextWithDiags.Should().EqualWithLineByLineDiffOutput(
-                        TestContext,
-                        exampleExists ? File.ReadAllText(bicepFile.FileUri.LocalPath) : "",
-                        expectedLocation: Path.Combine("src", "Bicep.Decompiler.IntegrationTests", parentStream, Path.GetRelativePath(outputDirectory, bicepFile.FileUri.LocalPath)),
-                        actualLocation: bicepFile.FileUri.LocalPath + ".actual");
+                    baselineFile.WriteToOutputFolder(sourceTextWithDiags);
+                    baselineFile.ShouldHaveExpectedValue();
                 }
             }
         }
 
-        private static IFileResolver ReadResourceFile(string resourcePath)
+        [DataTestMethod]
+        [EmbeddedFilesTestData(@"Files/Parameters/.*\.json")]
+        [TestCategory(BaselineHelper.BaselineTestCategory)]
+        public void Decompiler_generates_expected_bicepparam_files_with_diagnostics(EmbeddedFile embeddedJson)
+        {
+            var baselineFolder = BaselineFolder.BuildOutputFolder(TestContext, embeddedJson);
+            var jsonFile = baselineFolder.EntryFile;
+
+            var jsonUri = PathHelper.FilePathToFileUrl(jsonFile.OutputFilePath);
+            var decompiler = ServiceBuilder.Create().GetDecompiler();
+
+            var (entryPointUri, filesToSave) = decompiler.DecompileParameters(jsonFile.EmbeddedFile.Contents, PathHelper.ChangeExtension(jsonUri, LanguageConstants.ParamsFileExtension), null);
+
+            var baselineFile = baselineFolder.GetFileOrEnsureCheckedIn(entryPointUri);
+            baselineFile.WriteToOutputFolder(filesToSave[entryPointUri]);
+            baselineFile.ShouldHaveExpectedValue();
+        }
+
+        private static string ReadResourceFile(string resourcePath)
         {
             var manifestStream = typeof(DecompilationTests).Assembly.GetManifestResourceStream(resourcePath)!;
-            var jsonContents = new StreamReader(manifestStream).ReadToEnd();
-
-            var fileDict = new Dictionary<Uri, string>
-            {
-                [new Uri($"file:///{resourcePath}")] = jsonContents,
-            };
-
-            return new InMemoryFileResolver(fileDict);
+            return new StreamReader(manifestStream).ReadToEnd();
         }
 
         [DataTestMethod]
-        [DataRow("NonWorking/unknownprops.json", "[15:29]: Unrecognized top-level resource property 'madeUpProperty'")]
-        [DataRow("NonWorking/invalid-schema.json", "[2:98]: $schema value \"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#\" did not match any of the known ARM template deployment schemas.")]
-        [DataRow("NonWorking/keyvault-secret-reference.json", "[25:38]: Failed to convert parameter \"mySecret\": KeyVault secret references are not currently supported by the decompiler.")]
-        [DataRow("NonWorking/symbolic-names.json", "[27:16]: Decompilation of symbolic name templates is not currently supported")]
-        public void Decompiler_raises_errors_for_unsupported_features(string resourcePath, string expectedMessage)
+        [DataRow("Files/NonWorking/unknownprops.json", "[15:29]: Unrecognized top-level resource property 'madeUpProperty'")]
+        [DataRow("Files/NonWorking/invalid-schema.json", "[2:98]: $schema value \"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#\" did not match any of the known ARM template deployment schemas.")]
+        [DataRow("Files/NonWorking/keyvault-secret-reference.json", "[25:38]: Failed to convert parameter \"mySecret\": KeyVault secret references are not currently supported by the decompiler.")]
+        [DataRow("Files/NonWorking/symbolic-names.json", "[19:16]: Decompilation of symbolic name templates is not currently supported")]
+        [DataRow("Files/NonWorking/parameter-value-as-expression.json", "[39:218]: Expected to find an object, but found an expression. This is not currently supported by the decompiler.")]
+        [DataRow("Files/NonWorking/parameter-value-as-string.json", "[14:43]: Expected to find an object, but found: This is incorrect")]
+        public async Task Decompiler_raises_errors_for_unsupported_features(string resourcePath, string expectedMessage)
         {
-            Action onDecompile = () =>
+            Func<Task> onDecompile = async () =>
             {
-                var fileResolver = ReadResourceFile(resourcePath);
-                var decompiler = new TemplateDecompiler(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), fileResolver, new DefaultModuleRegistryProvider(fileResolver, BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory, BicepTestConstants.Features), BicepTestConstants.ConfigurationManager);
-                decompiler.DecompileFileWithModules(new Uri($"file:///{resourcePath}"), new Uri("file:///unused.bicep"));
+                var jsonContent = ReadResourceFile(resourcePath);
+                var decompiler = CreateDecompiler();
+                await decompiler.Decompile(new Uri("file:///unused.bicep"), jsonContent);
             };
 
-            onDecompile.Should().Throw<ConversionFailedException>().WithMessage(expectedMessage);
+            await onDecompile.Should().ThrowAsync<ConversionFailedException>().WithMessage(expectedMessage);
         }
 
         [DataTestMethod]
         [DataRow("\r\n", "\\r\\n")]
         [DataRow("\n", "\\n")]
-        public void Decompiler_handles_strings_with_newlines(string newline, string escapedNewline)
+        public async Task Decompiler_handles_strings_with_newlines(string newline, string escapedNewline)
         {
             var template = @"{
     ""$schema"": ""https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"",
@@ -176,42 +120,51 @@ namespace Bicep.Core.IntegrationTests
             template = string.Join(newline, Regex.Split(template, "\r?\n"));
 
             var fileUri = new Uri("file:///path/to/main.json");
-            var fileResolver = new InMemoryFileResolver(new Dictionary<Uri, string>
-            {
-                [fileUri] = template,
-            }); ;
 
-            var decompiler = new TemplateDecompiler(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), fileResolver, new DefaultModuleRegistryProvider(fileResolver, BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory, BicepTestConstants.Features), BicepTestConstants.ConfigurationManager);
-            var (entryPointUri, filesToSave) = decompiler.DecompileFileWithModules(fileUri, PathHelper.ChangeToBicepExtension(fileUri));
+            var decompiler = CreateDecompiler();
+            var (entryPointUri, filesToSave) = await decompiler.Decompile(PathHelper.ChangeToBicepExtension(fileUri), template);
 
             // this behavior is actually controlled by newtonsoft's deserializer, but we should assert it anyway to avoid regressions.
             filesToSave[entryPointUri].Should().Contain($"var multilineString = 'multi{escapedNewline}        line{escapedNewline}        string'");
         }
 
         [DataTestMethod]
-        [DataRow("and(variables('a'), variables('b'))", "boolean", "a && b")]
-        [DataRow("and(variables('a'), variables('b'), variables('c'))", "boolean", "a && b && c")]
-        [DataRow("or(variables('a'), variables('b'))", "boolean", "a || b")]
-        [DataRow("or(variables('a'), variables('b'), variables('c'))", "boolean", "a || b || c")]
-        [DataRow("add(variables('a'), variables('b'))", "int", "a + b")]
-        [DataRow("sub(variables('a'), variables('b'))", "int", "a - b")]
-        [DataRow("mul(variables('a'), variables('b'))", "int", "a * b")]
-        [DataRow("div(variables('a'), variables('b'))", "int", "a / b")]
-        [DataRow("mod(variables('a'), variables('b'))", "int", "a % b")]
-        [DataRow("less(variables('a'), variables('b'))", "boolean", "a < b")]
-        [DataRow("lessOrEquals(variables('a'), variables('b'))", "boolean", "a <= b")]
-        [DataRow("greater(variables('a'), variables('b'))", "boolean", "a > b")]
-        [DataRow("greaterOrEquals(variables('a'), variables('b'))", "boolean", "a >= b")]
-        [DataRow("equals(variables('a'), variables('b'))", "boolean", "a == b")]
-        [DataRow("equals(toLower(variables('a')),toLower(variables('b')))", "boolean", "a =~ b")]
-        [DataRow("not(equals(variables('a'),variables('b')))", "boolean", "a != b")]
-        [DataRow("not(equals(toLower(variables('a')),toLower(variables('b'))))", "boolean", "a !~ b")]
-        public void Decompiler_handles_banned_function_replacement(string expression, string type, string expectedValue)
+        [DataRow("and(variables('a'), variables('b'))", "boolean", "(a && b)")]
+        [DataRow("and(variables('a'), variables('b'), variables('c'))", "boolean", "(a && b && c)")]
+        [DataRow("or(variables('a'), variables('b'))", "boolean", "(a || b)")]
+        [DataRow("or(variables('a'), variables('b'), variables('c'))", "boolean", "(a || b || c)")]
+        [DataRow("add(variables('a'), variables('b'))", "int", "(a + b)")]
+        [DataRow("sub(variables('a'), variables('b'))", "int", "(a - b)")]
+        [DataRow("mul(variables('a'), variables('b'))", "int", "(a * b)")]
+        [DataRow("div(variables('a'), variables('b'))", "int", "(a / b)")]
+        [DataRow("mod(variables('a'), variables('b'))", "int", "(a % b)")]
+        [DataRow("less(variables('a'), variables('b'))", "boolean", "(a < b)")]
+        [DataRow("lessOrEquals(variables('a'), variables('b'))", "boolean", "(a <= b)")]
+        [DataRow("greater(variables('a'), variables('b'))", "boolean", "(a > b)")]
+        [DataRow("greaterOrEquals(variables('a'), variables('b'))", "boolean", "(a >= b)")]
+        [DataRow("equals(variables('a'), variables('b'))", "boolean", "(a == b)")]
+        [DataRow("equals(toLower(variables('a')),toLower(variables('b')))", "boolean", "(a =~ b)")]
+        [DataRow("not(equals(variables('a'),variables('b')))", "boolean", "(a != b)")]
+        [DataRow("not(equals(toLower(variables('a')),toLower(variables('b'))))", "boolean", "(a !~ b)")]
+        [DataRow("createArray(1, 2, 3)", "array", "[\n  1\n  2\n  3\n]")]
+        [DataRow("createObject('key', 'value')", "object", "{\n  key: 'value'\n}")]
+        [DataRow("tryGet(parameters('z'), 'y')", "int", "z.?y")]
+        [DataRow("tryGet(parameters('z'), 'y', 'x', 'w')", "int", "z.?y.x.w")]
+        [DataRow("tryGet(tryGet(parameters('z'), 'y', 'x'), 'w', 'v')", "int", "z.?y.x.?w.v")]
+        [DataRow("tryGet(parameters('z'), 'y', 'x', 'w').v", "int", "(z.?y.x.w).v")]
+        [DataRow("tryIndexFromEnd(parameters('z').array, 3, 'foo')", "int", "z.array[?^3].foo")]
+        [DataRow("tryIndexFromEnd(parameters('z').array, 3, createObject('value', 2, 'fromEnd', true()))", "int", "z.array[?^3][^2]")]
+        [DataRow("tryIndexFromEnd(parameters('z').array, 3, createObject('value', 2))", "int", "z.array[?^3][2]")]
+        [DataRow("tryIndexFromEnd(parameters('z').array, 3, createObject('value', 2)).foo", "int", "(z.array[?^3][2]).foo")]
+        [DataRow("indexFromEnd(parameters('z').array, 3)", "int", "z.array[^3]")]
+        public async Task Decompiler_handles_banned_function_replacement(string expression, string type, string expectedValue)
         {
             var template = @"{
     ""$schema"": ""https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"",
     ""contentVersion"": ""1.0.0.0"",
-    ""parameters"": {},
+    ""parameters"": {
+        ""z"": {""type"":""object""}
+    },
     ""variables"": {
         ""a"": true,
         ""b"": false,
@@ -227,103 +180,102 @@ namespace Bicep.Core.IntegrationTests
 }";
 
             var fileUri = new Uri("file:///path/to/main.json");
-            var fileResolver = new InMemoryFileResolver(new Dictionary<Uri, string>
-            {
-                [fileUri] = template,
-            });
 
-            var decompiler = new TemplateDecompiler(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), fileResolver, new DefaultModuleRegistryProvider(fileResolver, BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory, BicepTestConstants.Features), BicepTestConstants.ConfigurationManager);
-            var (entryPointUri, filesToSave) = decompiler.DecompileFileWithModules(fileUri, PathHelper.ChangeToBicepExtension(fileUri));
+            var decompiler = CreateDecompiler();
+            var (entryPointUri, filesToSave) = await decompiler.Decompile(PathHelper.ChangeToBicepExtension(fileUri), template);
 
-            filesToSave[entryPointUri].Should().Contain($"output calculated {type} = ({expectedValue})");
+            filesToSave[entryPointUri].Should().Contain($"output calculated {type} = {expectedValue}");
         }
 
         [TestMethod]
-        public void Decompiler_should_not_decompile_bicep_extension()
+        public async Task Decompiler_should_partially_handle_user_defined_functions_with_placeholders()
         {
+            const string template = """
+                {
+                 "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                 "contentVersion": "1.0.0.0",
+                 "parameters": {
+                   "storageNamePrefix": {
+                     "type": "string",
+                     "maxLength": 11
+                   }
+                 },
+                 "functions": [
+                  {
+                    "namespace": "contoso",
+                    "members": {
+                      "uniqueName": {
+                        "parameters": [
+                          {
+                            "name": "namePrefix",
+                            "type": "string"
+                          }
+                        ],
+                        "output": {
+                          "type": "string",
+                          "value": "[concat(toLower(parameters('namePrefix')), uniqueString(resourceGroup().id))]"
+                        }
+                      }
+                    }
+                  }
+                ],
+                 "resources": [
+                   {
+                     "type": "Microsoft.Storage/storageAccounts",
+                     "apiVersion": "2019-04-01",
+                     "name": "[contoso.uniqueName(parameters('storageNamePrefix'))]",
+                     "location": "South Central US",
+                     "sku": {
+                       "name": "Standard_LRS"
+                     },
+                     "kind": "StorageV2",
+                     "properties": {
+                       "supportsHttpsTrafficOnly": true
+                     }
+                   }
+                 ]
+                }
+                """;
+
+            var fileUri = new Uri("file:///path/to/main.json");
+
+            var decompiler = CreateDecompiler();
+            var (entryPointUri, filesToSave) = await decompiler.Decompile(PathHelper.ChangeToBicepExtension(fileUri), template);
+
+            filesToSave[entryPointUri].Should().Contain($"? /* TODO: User defined functions are not supported and have not been decompiled */");
+        }
+
+        [TestMethod]
+        public async Task Decompiler_should_not_interpret_numbers_with_locale_settings()
+        {
+            // https://github.com/Azure/bicep/issues/7615
             const string template = @"{
     ""$schema"": ""https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"",
     ""contentVersion"": ""1.0.0.0"",
     ""parameters"": {},
-    ""variables"": {},
+    ""variables"": {
+        ""cpu"": 0.25
+    },
     ""resources"": [],
     ""outputs"": {}
 }";
 
-            var fileUri = new Uri("file:///path/to/main.bicep");
-            var fileResolver = new InMemoryFileResolver(new Dictionary<Uri, string>
-            {
-                [fileUri] = template,
-            });
-
-            Action sut = () =>
-            {
-                var decompiler = new TemplateDecompiler(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), fileResolver, new DefaultModuleRegistryProvider(fileResolver, BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory, BicepTestConstants.Features), BicepTestConstants.ConfigurationManager);
-                decompiler.DecompileFileWithModules(fileUri, PathHelper.ChangeToBicepExtension(fileUri));
-            };
-
-            sut.Should().Throw<InvalidOperationException>()
-                .WithMessage("Cannot decompile the file with .bicep extension: file:///path/to/main.bicep.");
-        }
-
-        [TestMethod]
-        public void Decompiler_should_partially_handle_user_defined_functions_with_placeholders()
-        {
-            const string template = @"{
- ""$schema"": ""https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"",
- ""contentVersion"": ""1.0.0.0"",
- ""parameters"": {
-   ""storageNamePrefix"": {
-     ""type"": ""string"",
-     ""maxLength"": 11
-   }
- },
- ""functions"": [
-  {
-    ""namespace"": ""contoso"",
-    ""members"": {
-      ""uniqueName"": {
-        ""parameters"": [
-          {
-            ""name"": ""namePrefix"",
-            ""type"": ""string""
-          }
-        ],
-        ""output"": {
-          ""type"": ""string"",
-          ""value"": ""[concat(toLower(parameters('namePrefix')), uniqueString(resourceGroup().id))]""
-        }
-      }
-    }
-  }
-],
- ""resources"": [
-   {
-     ""type"": ""Microsoft.Storage/storageAccounts"",
-     ""apiVersion"": ""2019-04-01"",
-     ""name"": ""[contoso.uniqueName(parameters('storageNamePrefix'))]"",
-     ""location"": ""South Central US"",
-     ""sku"": {
-       ""name"": ""Standard_LRS""
-     },
-     ""kind"": ""StorageV2"",
-     ""properties"": {
-       ""supportsHttpsTrafficOnly"": true
-     }
-   }
- ]
-}";
-
             var fileUri = new Uri("file:///path/to/main.json");
-            var fileResolver = new InMemoryFileResolver(new Dictionary<Uri, string>
+
+            var currentCulture = Thread.CurrentThread.CurrentCulture;
+            try
             {
-                [fileUri] = template,
-            });
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("fi-FI");
 
-            var decompiler = new TemplateDecompiler(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), fileResolver, new DefaultModuleRegistryProvider(fileResolver, BicepTestConstants.ClientFactory, BicepTestConstants.TemplateSpecRepositoryFactory, BicepTestConstants.Features), BicepTestConstants.ConfigurationManager);
-            var (entryPointUri, filesToSave) = decompiler.DecompileFileWithModules(fileUri, PathHelper.ChangeToBicepExtension(fileUri));
+                var decompiler = CreateDecompiler();
+                var (entryPointUri, filesToSave) = await decompiler.Decompile(PathHelper.ChangeToBicepExtension(fileUri), template);
 
-            filesToSave[entryPointUri].Should().Contain($"? /* TODO: User defined functions are not supported and have not been decompiled */");
+                filesToSave[entryPointUri].Should().Contain($"var cpu = json('0.25')");
+            }
+            finally
+            {
+                Thread.CurrentThread.CurrentCulture = currentCulture;
+            }
         }
     }
 }

@@ -1,51 +1,46 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.RegistryModuleTool.Commands;
-using Bicep.RegistryModuleTool.Extensions;
-using Bicep.RegistryModuleTool.Options;
-using Bicep.RegistryModuleTool.Proxies;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Serilog;
-using Serilog.Events;
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Hosting;
 using System.CommandLine.Invocation;
 using System.CommandLine.NamingConventionBinder;
 using System.CommandLine.Parsing;
-using System.IO.Abstractions;
-using System.Threading.Tasks;
+using Bicep.RegistryModuleTool.Commands;
+using Bicep.RegistryModuleTool.Extensions;
+using Bicep.RegistryModuleTool.Options;
+using Microsoft.Extensions.Hosting;
+using Serilog;
+using Serilog.Events;
 
 namespace Bicep.RegistryModuleTool
 {
     public class Program
     {
-        public static Task<int> Main(string[] args) => CreateCommandLineBuilder()
-            .UseHost(Host.CreateDefaultBuilder, ConfigureHost)
-            .UseDefaults()
-            .UseVerboseOption()
-            .UseVersionOption()
-            .Build()
-            .InvokeAsync(args);
+        public static Task<int> Main(string[] args) => CreateParser().InvokeAsync(args);
 
-        private static CommandLineBuilder CreateCommandLineBuilder()
+        private static Parser CreateParser()
         {
             var rootCommand = new RootCommand("Bicep registry module tool")
                 .AddSubcommand(new ValidateCommand())
                 .AddSubcommand(new GenerateCommand());
 
-            rootCommand.Handler = CommandHandler.Create(() => rootCommand.Invoke("-h"));
+            var parser = new CommandLineBuilder(rootCommand)
+                .UseHost(Host.CreateDefaultBuilder, ConfigureHost)
+                .UseDefaults()
+                .UseVerboseOption()
+                .Build();
 
-            return new(rootCommand);
+            // Have to use parser.Invoke instead of rootCommand.Invoke due to the
+            // System.CommandLine bug: https://github.com/dotnet/command-line-api/issues/1691.
+            rootCommand.Handler = CommandHandler.Create(() => parser.Invoke("-h"));
+
+            return parser;
         }
 
         private static void ConfigureHost(IHostBuilder builder) => builder
-            .ConfigureServices(services => services
-                .AddSingleton<IEnvironmentProxy, EnvironmentProxy>()
-                .AddSingleton<IProcessProxy, ProcessProxy>()
-                .AddSingleton<IFileSystem, FileSystem>())
+            .ConfigureServices(services => services.AddBicepCompiler())
             .UseSerilog((context, logging) => logging
                 .MinimumLevel.Is(GetMinimumLogEventLevel(context))
                 .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)

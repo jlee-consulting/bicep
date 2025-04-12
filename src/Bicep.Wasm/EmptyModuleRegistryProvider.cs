@@ -1,13 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.Core.Registry;
 using System.Collections.Immutable;
+using Bicep.Core.Registry;
 
 namespace Bicep.Wasm
 {
-    public class EmptyModuleRegistryProvider : IModuleRegistryProvider
+    public class EmptyModuleRegistryProvider : ArtifactRegistryProvider
     {
-        public ImmutableArray<IModuleRegistry> Registries => ImmutableArray<IModuleRegistry>.Empty;
+        public EmptyModuleRegistryProvider()
+            : base(Array.Empty<IArtifactRegistry>())
+        {
+        }
     }
 }

@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using Bicep.Core.TypeSystem;
-using System;
 
 namespace Bicep.Core.Semantics
 {
@@ -83,6 +82,6 @@ namespace Bicep.Core.Semantics
             return this;
         }
 
-        public Decorator Build() => new Decorator(this.functionOverloadBuilder.Build(), this.attachableType, this.validator, this.evaluator);
+        public Decorator Build() => new(this.functionOverloadBuilder.Build(), this.attachableType, this.validator, this.evaluator);
     }
 }

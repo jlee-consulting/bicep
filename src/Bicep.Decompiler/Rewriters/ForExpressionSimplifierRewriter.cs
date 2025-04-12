@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
 using Bicep.Core.Syntax.Rewriters;
@@ -38,28 +36,28 @@ namespace Bicep.Core.Decompiler.Rewriters
             // look for a range() function with 2 args
             if (SemanticModelHelper.TryGetFunctionInNamespace(semanticModel, "sys", syntax) is not FunctionCallSyntaxBase rangeFunction ||
                 !LanguageConstants.IdentifierComparer.Equals(rangeFunction.Name.IdentifierName, "range") ||
-                rangeFunction.Arguments.Length != 2)
+                rangeFunction.Arguments.Count() != 2)
             {
                 return false;
             }
 
             // first range() arg must be 0
-            if (rangeFunction.Arguments[0].Expression is not IntegerLiteralSyntax startRange ||
+            if (rangeFunction.GetArgumentByPosition(0).Expression is not IntegerLiteralSyntax startRange ||
                 startRange.Value != 0)
             {
                 return false;
             }
 
             // look for a length() function with 1 arg
-            if (SemanticModelHelper.TryGetFunctionInNamespace(semanticModel, "sys", rangeFunction.Arguments[1].Expression) is not FunctionCallSyntaxBase lengthFunction ||
+            if (SemanticModelHelper.TryGetFunctionInNamespace(semanticModel, "sys", rangeFunction.GetArgumentByPosition(1).Expression) is not FunctionCallSyntaxBase lengthFunction ||
                 !LanguageConstants.IdentifierComparer.Equals(lengthFunction.Name.IdentifierName, "length") ||
-                lengthFunction.Arguments.Length != 1)
+                lengthFunction.Arguments.Count() != 1)
             {
                 return false;
             }
 
             // first length() arg must be a variable
-            if (lengthFunction.Arguments[0].Expression is not VariableAccessSyntax variableAccess)
+            if (lengthFunction.GetArgumentByPosition(0).Expression is not VariableAccessSyntax variableAccess)
             {
                 return false;
             }
@@ -140,28 +138,28 @@ namespace Bicep.Core.Decompiler.Rewriters
             SyntaxBase forVariableBlockSyntax;
             if (independentIndexAccesses.Any())
             {
-                forVariableBlockSyntax = new ForVariableBlockSyntax(
-                    SyntaxFactory.LeftParenToken,
-                    new LocalVariableSyntax(SyntaxFactory.CreateIdentifier(itemVarName)),
-                    SyntaxFactory.CommaToken,
-                    new LocalVariableSyntax(SyntaxFactory.CreateIdentifier(arrayIndexSymbol.Name)),
-                    SyntaxFactory.RightParenToken);
+                forVariableBlockSyntax = SyntaxFactory.CreateVariableBlock(new[] {
+                    SyntaxFactory.CreateIdentifier(itemVarName),
+                    SyntaxFactory.CreateIdentifier(arrayIndexSymbol.Name)
+                });
             }
             else
             {
-                forVariableBlockSyntax = new LocalVariableSyntax(SyntaxFactory.CreateIdentifier(itemVarName));
+                forVariableBlockSyntax = new LocalVariableSyntax(SyntaxFactory.CreateIdentifierWithTrailingSpace(itemVarName));
             }
 
             var forExpression = new VariableAccessSyntax(SyntaxFactory.CreateIdentifier(arraySymbol.Name));
 
             return new ForSyntax(
                 syntax.OpenSquare,
+                syntax.OpenNewlines,
                 syntax.ForKeyword,
                 forVariableBlockSyntax,
                 syntax.InKeyword,
                 forExpression,
                 syntax.Colon,
                 forBody,
+                syntax.CloseNewlines,
                 syntax.CloseSquare);
         }
 

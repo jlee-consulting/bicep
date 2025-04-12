@@ -3,6 +3,7 @@
 using Bicep.Core.Diagnostics;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
+using Bicep.Core.Utils;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -64,7 +65,7 @@ output subnet1id string = subnet1.id
                 template.Should().HaveValueAtPath("$.resources[2].name", "[format('{0}/{1}', 'myVnet', 'subnet2')]");
                 template.Should().HaveValueAtPath("$.resources[2].dependsOn", new JArray { "[resourceId('Microsoft.Network/virtualNetworks', 'myVnet')]" });
 
-                template.Should().HaveValueAtPath("$.outputs['subnet1prefix'].value", "[reference(resourceId('Microsoft.Network/virtualNetworks/subnets', 'myVnet', 'subnet1')).addressPrefix]");
+                template.Should().HaveValueAtPath("$.outputs['subnet1prefix'].value", "[reference(resourceId('Microsoft.Network/virtualNetworks/subnets', 'myVnet', 'subnet1'), '2020-06-01').addressPrefix]");
                 template.Should().HaveValueAtPath("$.outputs['subnet1name'].value", "subnet1");
                 template.Should().HaveValueAtPath("$.outputs['subnet1type'].value", "Microsoft.Network/virtualNetworks/subnets");
                 template.Should().HaveValueAtPath("$.outputs['subnet1id'].value", "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'myVnet', 'subnet1')]");
@@ -114,10 +115,51 @@ output res2childid string = res2child.id
             result.Template.Should().HaveValueAtPath("$.resources[3].name", "[format('{0}/{1}', 'res2', 'child2')]");
             result.Template.Should().HaveValueAtPath("$.resources[3].dependsOn", new JArray { "[extensionResourceId(resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1'), 'Microsoft.Rp2/resource2', 'res2')]" });
 
-            result.Template.Should().HaveValueAtPath("$.outputs['res2childprop'].value", "[reference(extensionResourceId(resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1'), 'Microsoft.Rp2/resource2/child2', 'res2', 'child2')).someProp]");
+            result.Template.Should().HaveValueAtPath("$.outputs['res2childprop'].value", "[reference(extensionResourceId(resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1'), 'Microsoft.Rp2/resource2/child2', 'res2', 'child2'), '2020-06-01').someProp]");
             result.Template.Should().HaveValueAtPath("$.outputs['res2childname'].value", "child2");
             result.Template.Should().HaveValueAtPath("$.outputs['res2childtype'].value", "Microsoft.Rp2/resource2/child2");
             result.Template.Should().HaveValueAtPath("$.outputs['res2childid'].value", "[extensionResourceId(resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1'), 'Microsoft.Rp2/resource2/child2', 'res2', 'child2')]");
+        }
+
+        [TestMethod]
+        public void Parent_property_works_with_extension_resource_collections()
+        {
+            var result = CompilationHelper.Compile(@"
+resource res 'Microsoft.Rp1/resource1@2020-06-01' = [for i in range(0, 10): {
+  name: 'res${i}'
+}]
+
+resource resChild 'Microsoft.Rp1/resource1/child1@2020-06-01' = [for j in range(10, 10): {
+  parent: res[j - 10]
+  name: 'child${j - 10}'
+}]
+
+resource otherRes 'Microsoft.Rp2/resource2@2020-06-01' = [for k in range(20, 10): {
+  scope: resChild[k - 20]
+  name: 'otherRes${k - 20}'
+}]
+
+resource otherResChild 'Microsoft.Rp2/resource2/child2@2020-06-01' = [for l in range(30, 10): {
+  parent: otherRes[l - 30]
+  name: 'otherResChild${l - 30}'
+}]
+
+output otherRes2childName string = otherResChild[2].name
+output otherRes2childType string = otherResChild[2].type
+output otherRes2childId string = otherResChild[2].id
+");
+
+            result.Diagnostics.ExcludingLinterDiagnostics().ExcludingMissingTypes().Should().BeEmpty();
+
+            var compiled = result.Template;
+            var evaluated = TemplateEvaluator.Evaluate(compiled).ToJToken();
+
+            compiled.Should().HaveValueAtPath("$.outputs['otherRes2childName'].value", "[format('otherResChild{0}', sub(range(30, 10)[2], 30))]");
+            evaluated.Should().HaveValueAtPath("$.outputs['otherRes2childName'].value", "otherResChild2");
+            compiled.Should().HaveValueAtPath("$.outputs['otherRes2childType'].value", "Microsoft.Rp2/resource2/child2");
+            evaluated.Should().HaveValueAtPath("$.outputs['otherRes2childType'].value", "Microsoft.Rp2/resource2/child2");
+            compiled.Should().HaveValueAtPath("$.outputs['otherRes2childId'].value", "[extensionResourceId(resourceId('Microsoft.Rp1/resource1/child1', format('res{0}', range(0, 10)[sub(range(10, 10)[sub(range(30, 10)[2], 30)], 10)]), format('child{0}', sub(range(10, 10)[sub(range(30, 10)[2], 30)], 10))), 'Microsoft.Rp2/resource2/child2', format('otherRes{0}', sub(range(20, 10)[sub(range(30, 10)[2], 30)], 20)), format('otherResChild{0}', sub(range(30, 10)[2], 30)))]");
+            evaluated.Should().HaveValueAtPath("$.outputs['otherRes2childId'].value", $"/subscriptions/{Guid.Empty}/resourceGroups/DummyResourceGroup/providers/Microsoft.Rp1/resource1/res2/child1/child2/providers/Microsoft.Rp2/resource2/otherRes2/child2/otherResChild2");
         }
 
         [TestMethod]
@@ -149,7 +191,7 @@ output res1childid string = child1.id
 
                 template.Should().NotHaveValueAtPath("$.resources[1]");
 
-                template.Should().HaveValueAtPath("$.outputs['res1childprop'].value", "[reference(resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1')).someProp]");
+                template.Should().HaveValueAtPath("$.outputs['res1childprop'].value", "[reference(resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1'), '2020-06-01').someProp]");
                 template.Should().HaveValueAtPath("$.outputs['res1childname'].value", "child1");
                 template.Should().HaveValueAtPath("$.outputs['res1childtype'].value", "Microsoft.Rp1/resource1/child1");
                 template.Should().HaveValueAtPath("$.outputs['res1childid'].value", "[resourceId('Microsoft.Rp1/resource1/child1', 'res1', 'child1')]");
@@ -367,7 +409,7 @@ resource res2 'Microsoft.Rp1/resource1/child2@2020-06-01' = {
 
 resource res3 'Microsoft.Rp1/resource1/child2@2020-06-01' = {
   parent: res1
-  name: '${res1.name}/res2'
+  name: '${res1.name}/res3'
 }
 ");
 
@@ -417,7 +459,7 @@ resource res1 'Microsoft.Rp1/resource1/child2@2020-06-01' = {
         public void Top_level_resource_should_have_appropriate_number_of_slashes_in_interpolated_names()
         {
 
-            var result = CompilationHelper.Compile(TestTypeHelper.CreateEmptyAzResourceTypeLoader(),
+            var result = CompilationHelper.Compile(TestTypeHelper.CreateEmptyResourceTypeLoader(),
                 ("main.bicep", @"
 param p1 string
 
@@ -432,7 +474,7 @@ resource res1 'Microsoft.Rp1/resource1@2020-06-01' = {
                 ("BCP169", DiagnosticLevel.Error, "Expected resource name to contain 0 \"/\" character(s). The number of name segments must match the number of segments in the resource type."),
             });
 
-            result = CompilationHelper.Compile(TestTypeHelper.CreateEmptyAzResourceTypeLoader(),
+            result = CompilationHelper.Compile(TestTypeHelper.CreateEmptyResourceTypeLoader(),
                 ("main.bicep", @"
 param p1 string
 
@@ -486,7 +528,7 @@ output child0Name string = child[0].name
                     "[resourceId('My.RP/parentType', 'parent')]",
                 });
 
-                template.Should().HaveValueAtPath("$.outputs['child0Props'].value", "[reference(resourceId('My.RP/parentType/childType', 'parent', format('child{0}', 0)))]");
+                template.Should().HaveValueAtPath("$.outputs['child0Props'].value", "[reference(resourceId('My.RP/parentType/childType', 'parent', format('child{0}', 0)), '2020-01-01')]");
                 template.Should().HaveValueAtPath("$.outputs['child0Name'].value", "[format('child{0}', 0)]");
             }
         }
@@ -538,8 +580,8 @@ output child0Name string = child[0].name
                     "[resourceId('My.RP/parentType', format('parent{0}', variables('items')[copyIndex()]))]",
                 });
 
-                template.Should().HaveValueAtPath("$.outputs['parent0Props'].value", "[reference(resourceId('My.RP/parentType', format('parent{0}', variables('items')[0])))]");
-                template.Should().HaveValueAtPath("$.outputs['child0Props'].value", "[reference(resourceId('My.RP/parentType/childType', format('parent{0}', variables('items')[0]), format('child{0}', 0)))]");
+                template.Should().HaveValueAtPath("$.outputs['parent0Props'].value", "[reference(resourceId('My.RP/parentType', format('parent{0}', variables('items')[0])), '2020-01-01')]");
+                template.Should().HaveValueAtPath("$.outputs['child0Props'].value", "[reference(resourceId('My.RP/parentType/childType', format('parent{0}', variables('items')[0]), format('child{0}', 0)), '2020-01-01')]");
                 template.Should().HaveValueAtPath("$.outputs['parent0Name'].value", "[format('parent{0}', variables('items')[0])]");
                 template.Should().HaveValueAtPath("$.outputs['child0Name'].value", "[format('child{0}', 0)]");
             }
@@ -586,7 +628,7 @@ output childName string = child.name
                     "[resourceId('My.RP/parentType', format('parent{0}', variables('items')[0]))]",
                 });
 
-                template.Should().HaveValueAtPath("$.outputs['childProps'].value", "[reference(resourceId('My.RP/parentType/childType', format('parent{0}', variables('items')[0]), 'child'))]");
+                template.Should().HaveValueAtPath("$.outputs['childProps'].value", "[reference(resourceId('My.RP/parentType/childType', format('parent{0}', variables('items')[0]), 'child'), '2020-01-01')]");
                 template.Should().HaveValueAtPath("$.outputs['childName'].value", "child");
             }
         }
@@ -638,8 +680,8 @@ output child0Name string = child[0].name
                     "[resourceId('My.RP/parentType', format('parent{0}', variables('items')[mod(add(copyIndex(), 1), length(variables('items')))]))]",
                 });
 
-                template.Should().HaveValueAtPath("$.outputs['parent0Props'].value", "[reference(resourceId('My.RP/parentType', format('parent{0}', variables('items')[0])))]");
-                template.Should().HaveValueAtPath("$.outputs['child0Props'].value", "[reference(resourceId('My.RP/parentType/childType', format('parent{0}', variables('items')[mod(add(copyIndex(), 1), length(variables('items')))]), format('child{0}', variables('items')[0])))]");
+                template.Should().HaveValueAtPath("$.outputs['parent0Props'].value", "[reference(resourceId('My.RP/parentType', format('parent{0}', variables('items')[0])), '2020-01-01')]");
+                template.Should().HaveValueAtPath("$.outputs['child0Props'].value", "[reference(resourceId('My.RP/parentType/childType', format('parent{0}', variables('items')[mod(add(0, 1), length(variables('items')))]), format('child{0}', variables('items')[0])), '2020-01-01')]");
                 template.Should().HaveValueAtPath("$.outputs['parent0Name'].value", "[format('parent{0}', variables('items')[0])]");
                 template.Should().HaveValueAtPath("$.outputs['child0Name'].value", "[format('child{0}', variables('items')[0])]");
             }

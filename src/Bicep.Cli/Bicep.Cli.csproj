@@ -4,18 +4,34 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>bicep</AssemblyName>
     <StartupObject>Bicep.Cli.Program</StartupObject>
-    <!-- .net 5 by default does not package up the native dependencies -->
+    <!-- .net by default does not package up the native dependencies -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- enable custom targets to generate a NOTICE file and embed it as a resource -->
+    <AddNoticeAsEmbeddedResource>true</AddNoticeAsEmbeddedResource>
+    <AddLicenseAsEmbeddedResource>true</AddLicenseAsEmbeddedResource>
+
+    <!-- enable trimmer warnings for Bicep CLI and projects it references -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <!-- restore pre-.net7 trim behavior https://learn.microsoft.com/en-us/dotnet/core/compatibility/deployment/7.0/trim-all-assemblies -->
+    <TrimMode>partial</TrimMode>
+
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <!-- restore pre-.net8 trim behavior https://learn.microsoft.com/en-us/dotnet/core/compatibility/serialization/8.0/publishtrimmed -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="6.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.1" />
+    <PackageReference Include="Sarif.Sdk" Version="4.5.4" />
+    <PackageReference Include="StreamJsonRpc" Version="2.20.20" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Bicep.Core\Bicep.Core.csproj" />
     <ProjectReference Include="..\Bicep.Decompiler\Bicep.Decompiler.csproj" />
+    <ProjectReference Include="../Bicep.Local.Deploy/Bicep.Local.Deploy.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +58,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="Nerdbank.GitVersioning" Version="3.4.255" />
+    <PackageReference Update="Nerdbank.GitVersioning" Version="3.7.112" />
   </ItemGroup>
 </Project>

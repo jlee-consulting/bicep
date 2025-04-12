@@ -1,9 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Linq;
 using Bicep.Core.Diagnostics;
+using Bicep.Core.Navigation;
+using Bicep.Core.Parsing;
+using Bicep.Core.Semantics;
+using Bicep.Core.SourceGraph;
 using Bicep.Core.TypeSystem;
-using Bicep.Core.Workspaces;
 
 namespace Bicep.Core.Syntax
 {
@@ -19,28 +21,34 @@ namespace Bicep.Core.Syntax
             return null;
         }
 
-        public static string? TryGetModulePath(ModuleDeclarationSyntax moduleDeclarationSyntax, out DiagnosticBuilder.ErrorBuilderDelegate? failureBuilder)
+        public static SyntaxBase? TryGetDefaultValue(ParameterSymbol parameterSymbol)
         {
-            var pathSyntax = moduleDeclarationSyntax.TryGetPath();
-            if (pathSyntax == null)
+            if (parameterSymbol.DeclaringSyntax is ParameterDeclarationSyntax syntax)
             {
-                failureBuilder = x => x.ModulePathHasNotBeenSpecified();
-                return null;
+                return TryGetDefaultValue(syntax);
             }
 
-            var pathValue = pathSyntax.TryGetLiteralValue();
-            if (pathValue == null)
-            {
-                failureBuilder = x => x.FilePathInterpolationUnsupported();
-                return null;
-            }
-
-            failureBuilder = null;
-            return pathValue;
+            return null;
         }
 
-        public static TypeSymbol? TryGetPrimitiveType(ParameterDeclarationSyntax parameterDeclarationSyntax)
-            => LanguageConstants.TryGetDeclarationType((parameterDeclarationSyntax.ParameterType as SimpleTypeSyntax)?.TypeName);
+        public static ResultWithDiagnosticBuilder<string> TryGetForeignTemplatePath(
+            IArtifactReferenceSyntax foreignTemplateReference,
+            DiagnosticBuilder.DiagnosticBuilderDelegate onUnspecifiedPath)
+        {
+            if (foreignTemplateReference.Path is not StringSyntax && foreignTemplateReference.Path is not NoneLiteralSyntax)
+            {
+                return new(onUnspecifiedPath);
+            }
+
+            var pathSyntax = foreignTemplateReference.Path is StringSyntax syntax ? syntax : null;
+
+            if (pathSyntax?.TryGetLiteralValue() is not string pathValue)
+            {
+                return new(x => x.FilePathInterpolationUnsupported());
+            }
+
+            return new(pathValue);
+        }
 
         public static ResourceScope GetTargetScope(TargetScopeSyntax targetScopeSyntax)
         {
@@ -49,7 +57,7 @@ namespace Bicep.Core.Syntax
             // Type checking will pick up any errors if we fail to process the syntax correctly in this function.
             // There's no need to do error checking here - just return "None" as the scope type.
 
-            if (!(targetScopeSyntax.Value is StringSyntax stringSyntax))
+            if (targetScopeSyntax.Value is not StringSyntax stringSyntax)
             {
                 return ResourceScope.None;
             }
@@ -66,11 +74,14 @@ namespace Bicep.Core.Syntax
                 LanguageConstants.TargetScopeTypeManagementGroup => ResourceScope.ManagementGroup,
                 LanguageConstants.TargetScopeTypeSubscription => ResourceScope.Subscription,
                 LanguageConstants.TargetScopeTypeResourceGroup => ResourceScope.ResourceGroup,
+                // The feature flag is checked during scope validation, so just handle it here.
+                LanguageConstants.TargetScopeTypeDesiredStateConfiguration => ResourceScope.DesiredStateConfiguration,
+                LanguageConstants.TargetScopeTypeLocal => ResourceScope.Local,
                 _ => ResourceScope.None,
             };
         }
 
-        public static ResourceScope GetTargetScope(BicepFile bicepFile)
+        public static ResourceScope GetTargetScope(BicepSourceFile bicepFile)
         {
             var defaultTargetScope = ResourceScope.ResourceGroup;
             var targetSyntax = bicepFile.ProgramSyntax.Children.OfType<TargetScopeSyntax>().FirstOrDefault();
@@ -87,5 +98,12 @@ namespace Bicep.Core.Syntax
 
             return targetScope;
         }
+
+        public static (SyntaxBase baseSyntax, SyntaxBase? indexSyntax) UnwrapArrayAccessSyntax(SyntaxBase syntax)
+            => syntax switch
+            {
+                ArrayAccessSyntax arrayAccess => (arrayAccess.BaseExpression, arrayAccess.IndexExpression),
+                _ => (syntax, null),
+            };
     }
 }

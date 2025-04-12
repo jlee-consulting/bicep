@@ -1,23 +1,23 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Bicep.Core.Semantics;
+using Bicep.Core.Semantics.Metadata;
 using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
-using Bicep.Core.TypeSystem.Az;
+using Bicep.Core.TypeSystem.Providers.Az;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Emit
 {
-    public class InlineDependencyVisitor : SyntaxVisitor
+    public class InlineDependencyVisitor : AstVisitor
     {
         private enum Decision
         {
             NotInline,
             Inline,
-            SkipInline //decision to not inline, however it might be overriden if outer syntax requires inlining
+            SkipInline //decision to not inline, however it might be overridden if outer syntax requires inlining
         }
         private readonly SemanticModel model;
         private readonly IDictionary<VariableSymbol, Decision> shouldInlineCache;
@@ -39,7 +39,7 @@ namespace Bicep.Core.Emit
             if (targetVariable is not null)
             {
                 // the functionality 
-                this.currentStack = ImmutableStack.Create<string>();
+                this.currentStack = [];
                 this.capturedSequence = null;
             }
         }
@@ -68,7 +68,7 @@ namespace Bicep.Core.Emit
         /// <param name="variableAccessChain">The variable access chain that leads to inlining or empty if not available.</param>
         public static bool ShouldInlineVariable(SemanticModel model, VariableDeclarationSyntax variable, out ImmutableArray<string> variableAccessChain)
         {
-            variableAccessChain = ImmutableArray<string>.Empty;
+            variableAccessChain = [];
             if (model.GetSymbolInfo(variable) is not VariableSymbol variableSymbol)
             {
                 // we have errors - assume this is not meant to be inlined
@@ -83,7 +83,7 @@ namespace Bicep.Core.Emit
                 return false;
             }
 
-            variableAccessChain = visitor.capturedSequence?.Reverse().ToImmutableArray() ?? ImmutableArray<string>.Empty;
+            variableAccessChain = visitor.capturedSequence?.Reverse().ToImmutableArray() ?? [];
             return true;
         }
 
@@ -109,14 +109,24 @@ namespace Bicep.Core.Emit
 
         public override void VisitFunctionCallSyntax(FunctionCallSyntax syntax)
         {
-            VisitFunctionCallSyntaxBaseInternal(syntax);
-            base.VisitFunctionCallSyntax(syntax);
+            var functionSymbol = model.GetSymbolInfo(syntax) as FunctionSymbol;
+            VisitFunctionCallSyntaxBaseInternal(functionSymbol, syntax);
+
+            if (ShouldVisitFunctionArguments(functionSymbol))
+            {
+                base.VisitFunctionCallSyntax(syntax);
+            }
         }
 
         public override void VisitInstanceFunctionCallSyntax(InstanceFunctionCallSyntax syntax)
         {
-            VisitFunctionCallSyntaxBaseInternal(syntax);
-            base.VisitInstanceFunctionCallSyntax(syntax);
+            var functionSymbol = model.GetSymbolInfo(syntax) as FunctionSymbol;
+            VisitFunctionCallSyntaxBaseInternal(functionSymbol, syntax);
+
+            if (ShouldVisitFunctionArguments(functionSymbol))
+            {
+                base.VisitInstanceFunctionCallSyntax(syntax);
+            }
         }
 
         public override void VisitPropertyAccessSyntax(PropertyAccessSyntax syntax)
@@ -178,6 +188,7 @@ namespace Bicep.Core.Emit
 
                 case ResourceSymbol:
                 case ModuleSymbol:
+                case ParameterSymbol parameterSymbol when model.ResourceMetadata.TryLookup(syntax) is ResourceMetadata:
                     if (this.currentDeclaration is not null && shouldInlineCache[currentDeclaration] != Decision.SkipInline)
                     {
                         //inline only if declaration wasn't explicitly excluded from inlining, to avoid inlining usages which are permitted
@@ -242,6 +253,9 @@ namespace Bicep.Core.Emit
                 case ModuleSymbol moduleSymbol when moduleSymbol.TryGetBodyObjectType() is { } bodyObjectType:
                     SetSkipInlineCache(ShouldSkipInlining(bodyObjectType, syntax.PropertyName.IdentifierName));
                     return;
+                case ParameterSymbol parameterSymbol when parameterSymbol.TryGetBodyObjectType() is { } bodyObjectType:
+                    SetSkipInlineCache(ShouldSkipInlining(bodyObjectType, syntax.PropertyName.IdentifierName));
+                    return;
             }
         }
 
@@ -251,7 +265,7 @@ namespace Bicep.Core.Emit
             _ => this.model.GetSymbolInfo(syntax)
         };
 
-        private void VisitFunctionCallSyntaxBaseInternal(FunctionCallSyntaxBase syntax)
+        private void VisitFunctionCallSyntaxBaseInternal(FunctionSymbol? functionSymbol, FunctionCallSyntaxBase syntax)
         {
             if (currentDeclaration == null)
             {
@@ -264,11 +278,10 @@ namespace Bicep.Core.Emit
                 return;
             }
 
-            switch (model.GetSymbolInfo(syntax))
+            if (functionSymbol is { })
             {
-                case FunctionSymbol functionSymbol:
-                    SetInlineCache(functionSymbol.FunctionFlags.HasFlag(FunctionFlags.RequiresInlining));
-                    return;
+                var shouldInline = functionSymbol.FunctionFlags.HasFlag(FunctionFlags.RequiresInlining);
+                SetInlineCache(shouldInline);
             }
         }
 
@@ -286,5 +299,8 @@ namespace Bicep.Core.Emit
                 this.shouldInlineCache[this.currentDeclaration] = shouldNotInline ? Decision.SkipInline : Decision.Inline;
             }
         }
+
+        private static bool ShouldVisitFunctionArguments(FunctionSymbol? functionSymbol)
+            => functionSymbol is null || !functionSymbol.FunctionFlags.HasFlag(FunctionFlags.IsArgumentValueIndependent);
     }
 }

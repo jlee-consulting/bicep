@@ -1,20 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-import path from "path";
 import fs from "fs";
-import rimraf from "rimraf";
-import { promisify } from "util";
 import { homedir } from "os";
-
-const rimrafAsync = promisify(rimraf);
+import path from "path";
+import { rimraf } from "rimraf";
+import { expect } from "vitest";
 
 export const bicepCli = path.resolve(
   __dirname,
-  process.env.BICEP_CLI_EXECUTABLE ||
-    "../../../Bicep.Cli/bin/Debug/net6.0/bicep"
+  process.env.BICEP_CLI_EXECUTABLE || "../../../Bicep.Cli/bin/Debug/net8.0/bicep",
 );
 
-export const moduleCacheRoot = path.resolve(homedir(), ".bicep");
+export const defaultModuleCacheRoot = path.resolve(homedir(), ".bicep");
 
 export function pathToExampleFile(...pathNames: string[]): string {
   return path.join(__dirname, "../examples", ...pathNames);
@@ -25,11 +22,11 @@ export function pathToTempFile(...pathNames: string[]): string {
   return tempPath;
 }
 
-export function pathToCachedTsModuleFile(...pathNames: string[]): string {
+export function pathToCachedTsModuleFile(moduleCacheRoot: string, ...pathNames: string[]): string {
   return path.join(moduleCacheRoot, "ts", ...pathNames);
 }
 
-export function pathToCachedBrModuleFile(...pathNames: string[]): string {
+export function pathToCachedBrModuleFile(moduleCacheRoot: string, ...pathNames: string[]): string {
   return path.join(moduleCacheRoot, "br", ...pathNames);
 }
 
@@ -59,7 +56,7 @@ function logFilesInternal(files: string[], dirPath: string) {
 }
 
 export async function emptyDir(dirPath: string): Promise<void> {
-  await rimrafAsync(dirPath);
+  await rimraf(dirPath);
 }
 
 export function expectFileExists(filePath: string): void {
@@ -70,11 +67,7 @@ export function expectFileNotExists(filePath: string): void {
   expect(fs.existsSync(filePath)).toBeFalsy();
 }
 
-export function writeTempFile(
-  testArea: string,
-  fileName: string,
-  contents: string
-): string {
+export function writeTempFile(testArea: string, fileName: string, contents: string): string {
   const tempDir = pathToTempFile(testArea);
   fs.mkdirSync(tempDir, { recursive: true });
 
@@ -82,4 +75,27 @@ export function writeTempFile(
   fs.writeFileSync(filePath, contents);
 
   return filePath;
+}
+
+export function ensureParentDirExists(filePath: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
+export function copyToTempFile(
+  baseFolder: string,
+  relativePath: string,
+  testArea: string,
+  replace?: {
+    values: Record<string, string>;
+    relativePath: string;
+  },
+) {
+  const fileContents = readFileSync(path.join(baseFolder, relativePath));
+
+  const replacedContents = Object.entries(replace?.values ?? {}).reduce(
+    (contents, [from, to]) => contents.replace(from, to),
+    fileContents,
+  );
+
+  return writeTempFile(testArea, replace?.relativePath ?? relativePath, replacedContents);
 }

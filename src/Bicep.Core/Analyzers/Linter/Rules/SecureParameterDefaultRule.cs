@@ -4,10 +4,10 @@
 using Bicep.Core.CodeAction;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Semantics;
+using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.Syntax;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using Bicep.Core.Syntax.Visitors;
+using Bicep.Core.TypeSystem;
 
 namespace Bicep.Core.Analyzers.Linter.Rules
 {
@@ -18,10 +18,11 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         public SecureParameterDefaultRule() : base(
             code: Code,
             description: CoreResources.SecureParameterDefaultRuleDescription,
+            LinterRuleCategory.Security,
             docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         { }
 
-        override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
+        override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
         {
             var defaultValueSyntaxes = model.Root.ParameterDeclarations.Where(p => p.IsSecure())
                 .Select(p => p.DeclaringParameter.Modifier as ParameterDefaultValueSyntax)
@@ -37,44 +38,30 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                     // Empty string - okay
                     continue;
                 }
+                else if (model.GetTypeInfo(defaultValue).ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure))
+                {
+                    // has @secure attribute - okay
+                    continue;
+                }
                 else if (defaultValue is ObjectSyntax objectSyntax && !objectSyntax.Properties.Any())
                 {
                     // Empty object - okay
                     continue;
                 }
-                else if (defaultValue is ExpressionSyntax expressionSyntax && ExpressionContainsNewGuid(expressionSyntax))
+                else if (defaultValue is ExpressionSyntax expressionSyntax && ExpressionContainsNewGuid(model, expressionSyntax))
                 {
                     // Contains a call to newGuid() - okay
                     continue;
                 }
 
-                yield return CreateFixableDiagnosticForSpan(defaultValueSyntax.Span,
+                yield return CreateFixableDiagnosticForSpan(diagnosticLevel,
+                    defaultValueSyntax.Span,
                     new CodeFix(CoreResources.SecureParameterDefaultFixTitle, true, CodeFixKind.QuickFix,
                             new CodeReplacement(defaultValueSyntax.Span, string.Empty)));
             }
         }
 
-        private class NewGuidVisitor : SyntaxVisitor
-        {
-            public bool hasNewGuid = false;
-
-            public override void VisitFunctionCallSyntax(FunctionCallSyntax syntax)
-            {
-                if (syntax.NameEquals("newGuid"))
-                {
-                    hasNewGuid = true;
-                    return;
-                }
-
-                base.VisitFunctionCallSyntax(syntax);
-            }
-        }
-
-        private static bool ExpressionContainsNewGuid(ExpressionSyntax expression)
-        {
-            var visitor = new NewGuidVisitor();
-            expression.Accept(visitor);
-            return visitor.hasNewGuid;
-        }
+        private static bool ExpressionContainsNewGuid(SemanticModel model, ExpressionSyntax expression)
+            => SemanticModelHelper.GetFunctionsByName(model, SystemNamespaceType.BuiltInName, "newGuid", expression).Any();
     }
 }

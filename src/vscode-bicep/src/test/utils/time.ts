@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { sleep } from "../../utils/time";
 
 export async function retryWhile<T>(
   func: () => Promise<T>,
@@ -11,7 +9,7 @@ export async function retryWhile<T>(
   retryOptions?: Readonly<{
     interval?: number;
     timeout?: number;
-  }>
+  }>,
 ): Promise<T> {
   let result = await func();
 
@@ -34,11 +32,11 @@ export async function until(
   retryOptions?: Readonly<{
     interval?: number;
     timeoutMs?: number;
-  }>
+  }>,
 ): Promise<void> {
   await retryWhile(
     async () => void 0,
     () => !predicate(),
-    retryOptions
+    retryOptions,
   );
 }

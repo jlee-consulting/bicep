@@ -1,31 +1,33 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
-using Bicep.Core.FileSystem;
+using Bicep.Core.Intermediate;
 using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Semantics
 {
     public class FunctionOverload
     {
-        public delegate TypeSymbol ReturnTypeBuilderDelegate(IBinder binder, IFileResolver fileResolver, IDiagnosticWriter diagnostics, ImmutableArray<FunctionArgumentSyntax> arguments, ImmutableArray<TypeSymbol> argumentTypes);
-        public delegate SyntaxBase EvaluatorDelegate(FunctionCallSyntaxBase functionCall, Symbol symbol, TypeSymbol typeSymbol, FunctionVariable? functionVariable);
-        public delegate SyntaxBase? VariableGeneratorDelegate(FunctionCallSyntaxBase functionCall, Symbol symbol, TypeSymbol typeSymbol, bool directVariableAssignment);
+        public delegate FunctionResult ResultBuilderDelegate(
+            SemanticModel model,
+            IDiagnosticWriter diagnostics,
+            FunctionCallSyntaxBase functionCall,
+            ImmutableArray<TypeSymbol> argumentTypes);
 
-        public FunctionOverload(string name, string genericDescription, string description, ReturnTypeBuilderDelegate returnTypeBuilder, TypeSymbol signatureType, IEnumerable<FixedFunctionParameter> fixedParameters, VariableFunctionParameter? variableParameter, EvaluatorDelegate? evaluator, VariableGeneratorDelegate? variableGenerator, FunctionFlags flags = FunctionFlags.Default)
+        public delegate Expression EvaluatorDelegate(
+            FunctionCallExpression expression);
+
+        public FunctionOverload(string name, string genericDescription, string description, ResultBuilderDelegate resultBuilder, TypeSymbol signatureType, IEnumerable<FixedFunctionParameter> fixedParameters, VariableFunctionParameter? variableParameter, EvaluatorDelegate? evaluator, FunctionFlags flags = FunctionFlags.Default)
         {
             Name = name;
             GenericDescription = genericDescription;
             Description = description;
-            ReturnTypeBuilder = returnTypeBuilder;
+            ResultBuilder = resultBuilder;
             Evaluator = evaluator;
-            VariableGenerator = variableGenerator;
             FixedParameters = fixedParameters.ToImmutableArray();
             VariableParameter = variableParameter;
             Flags = flags;
@@ -51,13 +53,11 @@ namespace Bicep.Core.Semantics
 
         public VariableFunctionParameter? VariableParameter { get; }
 
-        public ReturnTypeBuilderDelegate ReturnTypeBuilder { get; }
+        public ResultBuilderDelegate ResultBuilder { get; }
 
         public TypeSymbol TypeSignatureSymbol { get; }
 
         public EvaluatorDelegate? Evaluator { get; }
-
-        public VariableGeneratorDelegate? VariableGenerator { get; }
 
         public FunctionFlags Flags { get; }
 
@@ -65,7 +65,7 @@ namespace Bicep.Core.Semantics
 
         public IEnumerable<string> ParameterTypeSignatures => this.FixedParameters
             .Select(fp => fp.Signature)
-            .Concat(this.VariableParameter?.GenericSignature.AsEnumerable() ?? Enumerable.Empty<string>());
+            .Concat(this.VariableParameter?.GenericSignature.AsEnumerable() ?? []);
 
         public bool HasParameters => this.MinimumArgumentCount > 0 || this.MaximumArgumentCount > 0;
 
@@ -93,25 +93,7 @@ namespace Bicep.Core.Semantics
             for (int i = 0; i < argumentTypes.Count; i++)
             {
                 var argumentType = argumentTypes[i];
-                TypeSymbol expectedType;
-
-                if (i < this.FixedParameters.Length)
-                {
-                    expectedType = this.FixedParameters[i].Type;
-                }
-                else
-                {
-                    if (this.VariableParameter == null)
-                    {
-                        // Theoretically this shouldn't happen, becase it already passed argument count checking, either:
-                        // - The function takes 0 argument - argumentTypes must be empty, so it won't enter the loop
-                        // - The function take at least one argument - when i >= FixedParameterTypes.Length, VariableParameterType
-                        //   must not be null, otherwise, the function overload has invalid parameter count definition.
-                        throw new ArgumentException($"Got unexpected null value for {nameof(this.VariableParameter)}. Ensure the function overload definition is correct: '{this.TypeSignature}'.");
-                    }
-
-                    expectedType = this.VariableParameter.Type;
-                }
+                var expectedType = GetArgumentType(i);
 
                 if (TypeValidator.AreTypesAssignable(argumentType, expectedType) != true)
                 {
@@ -121,8 +103,39 @@ namespace Bicep.Core.Semantics
                 }
             }
 
-            return FunctionMatchResult.Match;
+            return argumentTypes.OfType<AnyType>().Any()
+                ? FunctionMatchResult.PotentialMatch
+                : FunctionMatchResult.Match;
         }
 
+        public TypeSymbol GetArgumentType(
+            int index,
+            FunctionOverloadBuilder.GetFunctionArgumentType? getFunctionArgumentType = null)
+        {
+            if (index < this.FixedParameters.Length)
+            {
+                if (FixedParameters[index].Calculator is { } calculator &&
+                    getFunctionArgumentType is not null &&
+                    calculator(getFunctionArgumentType) is { } calculatedType)
+                {
+                    return calculatedType;
+                }
+
+                return this.FixedParameters[index].Type;
+            }
+            else
+            {
+                if (this.VariableParameter == null)
+                {
+                    // Theoretically this shouldn't happen, because it already passed argument count checking, either:
+                    // - The function takes 0 argument - argumentTypes must be empty, so it won't enter the loop
+                    // - The function take at least one argument - when i >= FixedParameterTypes.Length, VariableParameterType
+                    //   must not be null, otherwise, the function overload has invalid parameter count definition.
+                    throw new ArgumentException($"Got unexpected null value for {nameof(this.VariableParameter)}. Ensure the function overload definition is correct: '{this.TypeSignature}'.");
+                }
+
+                return this.VariableParameter.Type;
+            }
+        }
     }
 }

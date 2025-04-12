@@ -1,12 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.RegistryModuleTool.Exceptions;
-using Bicep.RegistryModuleTool.Extensions;
 using Bicep.RegistryModuleTool.ModuleFiles;
 using Microsoft.Extensions.Logging;
-using System.Linq;
-using System.Text;
 
 namespace Bicep.RegistryModuleTool.ModuleFileValidators
 {
@@ -14,54 +10,29 @@ namespace Bicep.RegistryModuleTool.ModuleFileValidators
     {
         private readonly ILogger logger;
 
-        private readonly MainArmTemplateFile latestMainArmTemplateFile;
-
-        public DescriptionsValidator(ILogger logger, MainArmTemplateFile latestMainArmTemplateFile)
+        public DescriptionsValidator(ILogger logger)
         {
             this.logger = logger;
-            this.latestMainArmTemplateFile = latestMainArmTemplateFile;
         }
 
-        public void Validate(MainBicepFile file)
+        public Task<IEnumerable<string>> ValidateAsync(MainBicepFile file) => Task.FromResult(this.Validate(file));
+
+        private IEnumerable<string> Validate(MainBicepFile file)
         {
             this.logger.LogInformation("Making sure descriptions are defined for all parameters and outputs...");
 
-            var noDescriptionParameters = latestMainArmTemplateFile.Parameters.Where(parameter => string.IsNullOrEmpty(parameter.Description));
-            var noDescriptionOutputs = latestMainArmTemplateFile.Outputs.Where(output => string.IsNullOrEmpty(output.Description));
+            var noDescriptionParameters = file.Parameters.Where(x => string.IsNullOrEmpty(x.Description));
+            var noDescriptionOutputs = file.Outputs.Where(x => string.IsNullOrEmpty(x.Description));
 
-            if (noDescriptionParameters.IsEmpty() && noDescriptionOutputs.IsEmpty())
+            foreach (var parameter in noDescriptionParameters)
             {
-                return;
+                yield return @$"A description must be specified for parameter ""{parameter.Name}"".";
             }
 
-            var errorMessageBuilder = new StringBuilder();
-
-            if (noDescriptionParameters.Any())
+            foreach (var output in noDescriptionOutputs)
             {
-                errorMessageBuilder.AppendLine($"The file \"{file.Path}\" is invalid. Descriptions for the following parameters are missing:");
-
-                foreach (var parameter in noDescriptionParameters)
-                {
-                    errorMessageBuilder.AppendLine($"  - {parameter.Name}");
-                }
+                yield return @$"A description must be specified for output ""{output.Name}"".";
             }
-
-            if (noDescriptionOutputs.Any())
-            {
-                if (errorMessageBuilder.Length > 0)
-                {
-                    errorMessageBuilder.AppendLine();
-                }
-
-                errorMessageBuilder.AppendLine($"The file \"{file.Path}\" is invalid. Descriptions for the following outputs are missing:");
-
-                foreach (var output in noDescriptionOutputs)
-                {
-                    errorMessageBuilder.AppendLine($"  - {output.Name}");
-                }
-            }
-
-            throw new InvalidModuleException(errorMessageBuilder.ToString());
         }
     }
 }

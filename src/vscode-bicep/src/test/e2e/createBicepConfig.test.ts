@@ -1,15 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { Uri, window } from "vscode";
+import fs from "fs";
 import path from "path";
-import fse from "fs-extra";
-import os from "os";
-import {
-  executeCloseAllEditors,
-  executeCreateConfigFileCommand,
-} from "./commands";
-import {} from "fs";
+import { TextEditor, Uri, window } from "vscode";
+import { createUniqueTempFolder } from "../utils/createUniqueTempFolder";
+import { normalizeMultilineString } from "../utils/normalizeMultilineString";
+import { testScope } from "../utils/testScope";
+import { executeCloseAllEditors, executeCreateConfigFileCommand } from "./commands";
+import { expectedNewConfigFileContents } from "./expectedNewConfigFileContents";
 
 describe("bicep.createConfigFile", (): void => {
   afterEach(async () => {
@@ -19,74 +18,87 @@ describe("bicep.createConfigFile", (): void => {
   it("should create valid config file and open it", async () => {
     const tempFolder = createUniqueTempFolder("createBicepConfigTest-");
     const fakeBicepPath = path.join(tempFolder, "main.bicep");
+
     try {
-      let newConfigPath = await executeCreateConfigFileCommand(
-        Uri.file(fakeBicepPath)
-      );
+      let newConfigPath: string;
 
-      if (!newConfigPath) {
-        throw new Error(
-          `Language server returned ${String(
-            newConfigPath
-          )} for bicep.createConfigFile`
-        );
-      }
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      newConfigPath = newConfigPath!;
+      await testScope("Execute Create Config command", async () => {
+        const newConfigPathOrUndefined = await executeCreateConfigFileCommand(Uri.file(fakeBicepPath));
 
-      expect(path.basename(newConfigPath)).toBe("bicepconfig.json");
-      if (!fileExists(newConfigPath)) {
-        throw new Error(
-          `Expected file ${newConfigPath} to exist but it doesn't`
-        );
-      }
+        if (!newConfigPathOrUndefined) {
+          throw new Error(`Language server returned ${String(newConfigPathOrUndefined)} for bicep.createConfigFile`);
+        }
 
-      expect(fileContains(newConfigPath, "rules")).toBeTruthy();
-      expect(fileIsValidJson(newConfigPath)).toBeTruthy();
+        newConfigPath = newConfigPathOrUndefined!;
 
-      // Since the test instance of vscode does not have any workspace folders, the new file should be opened
-      //   in the same folder as the bicep file
-      expect(path.dirname(newConfigPath).toLowerCase()).toBe(
-        path.dirname(fakeBicepPath).toLowerCase()
-      );
+        expect(path.basename(newConfigPath)).toBe("bicepconfig.json");
+        if (!fileExists(newConfigPath)) {
+          throw new Error(`Expected file ${newConfigPath} to exist but it doesn't`);
+        }
 
-      // Make sure the new config file has been opened in an editor
-      const editor = window.visibleTextEditors.find(
-        (ed) =>
-          ed.document.uri.fsPath.toLowerCase() === newConfigPath?.toLowerCase()
-      );
-      if (!editor) {
-        throw new Error("New config file should be opened in a visible editor");
-      }
-    } finally {
-      fse.rmdirSync(tempFolder, {
-        recursive: true,
-        maxRetries: 5,
-        retryDelay: 1000,
+        expect(fileContains(newConfigPath, "rules")).toBeTruthy();
+
+        // Since the test instance of vscode does not have any workspace folders, the new file should be opened
+        //   in the same folder as the bicep file
+        expect(path.dirname(newConfigPath).toLowerCase()).toBe(path.dirname(fakeBicepPath).toLowerCase());
       });
+
+      let editorOrUndefined: TextEditor | undefined;
+      await testScope("Make sure the new config file has been opened in an editor", async () => {
+        editorOrUndefined = window.visibleTextEditors.find(
+          (ed) => ed.document.uri.fsPath.toLowerCase() === newConfigPath?.toLowerCase(),
+        );
+        if (!editorOrUndefined) {
+          throw new Error("New config file should be opened in a visible editor");
+        }
+      });
+      const editor = editorOrUndefined!;
+
+      await testScope("Verify text", () => {
+        const expectedText = expectedNewConfigFileContents;
+        const actualText = editor.document.getText();
+        const expectedTextNormalized = normalizeMultilineString(expectedText);
+        const actualTextNormalized = normalizeMultilineString(actualText);
+        expect(actualTextNormalized).toBe(expectedTextNormalized);
+      });
+
+      /* TODO: DISABLED (FLAKY) - see https://github.com/Azure/bicep/issues/6766
+      await testScope(
+        `Verify that vscode is in an "insertion" state with the dropdown for the first rule open to show the available diagnostic levels (the current one should be "warning"). Verify this by moving down to the next suggestion ("off") and selecting it`,
+        async () => {
+          const expectedAfterSelectingOffInsteadOfWarning =
+            expectedNewConfigFileContents.replace(/warning/, "off");
+          await executeSelectNextSuggestion();
+          await executeAcceptSelectedSuggestion();
+          const textAfterSelectingOffInsteadOfWarningtext =
+            editor.document.getText();
+          expect(
+            normalizeMultilineString(textAfterSelectingOffInsteadOfWarningtext)
+          ).toBe(
+            normalizeMultilineString(expectedAfterSelectingOffInsteadOfWarning)
+          );
+        }
+      );
+      */
+    } finally {
+      try {
+        fs.rmSync(tempFolder, {
+          recursive: true,
+          maxRetries: 5,
+          retryDelay: 1000,
+        });
+      } catch {
+        // post-test cleanup is strictly best-effort only
+      }
     }
   });
 
   function fileExists(path: string): boolean {
-    return fse.existsSync(path);
+    return fs.existsSync(path);
   }
 
   function fileContains(path: string, pattern: RegExp | string): boolean {
-    const contents: string = fse.readFileSync(path).toString();
+    const contents: string = fs.readFileSync(path).toString();
     return !!contents.match(pattern);
   }
-
-  function fileIsValidJson(path: string): boolean {
-    fse.readJsonSync(path, { throws: true });
-    return true;
-  }
 });
-
-function createUniqueTempFolder(filenamePrefix: string): string {
-  const tempFolder = os.tmpdir();
-  if (!fse.existsSync(tempFolder)) {
-    fse.mkdirSync(tempFolder, { recursive: true });
-  }
-
-  return fse.mkdtempSync(path.join(tempFolder, filenamePrefix));
-}

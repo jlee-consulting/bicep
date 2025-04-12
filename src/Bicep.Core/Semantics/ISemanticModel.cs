@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 using System.Collections.Immutable;
-using Bicep.Core.TypeSystem;
 using Bicep.Core.Semantics.Metadata;
+using Bicep.Core.TypeSystem;
 
 namespace Bicep.Core.Semantics
 {
@@ -11,7 +11,11 @@ namespace Bicep.Core.Semantics
     {
         ResourceScope TargetScope { get; }
 
-        ImmutableArray<ParameterMetadata> Parameters { get; }
+        ImmutableSortedDictionary<string, ParameterMetadata> Parameters { get; }
+
+        ImmutableSortedDictionary<string, ExtensionMetadata> Extensions { get; }
+
+        ImmutableSortedDictionary<string, ExportMetadata> Exports { get; }
 
         ImmutableArray<OutputMetadata> Outputs { get; }
 

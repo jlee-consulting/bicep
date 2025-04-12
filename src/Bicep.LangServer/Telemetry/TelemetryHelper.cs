@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Collections.Generic;
-using System.Linq;
 using Bicep.Core.Analyzers.Linter;
 using Bicep.Core.Configuration;
+using Newtonsoft.Json.Linq;
+using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 
 namespace Bicep.LanguageServer.Telemetry
 {
@@ -27,7 +27,7 @@ namespace Bicep.LanguageServer.Telemetry
 
             if (!prevLinterEnabledSettingValue && !curLinterEnabledSettingValue)
             {
-                return Enumerable.Empty<BicepTelemetryEvent>();
+                return [];
             }
 
             List<BicepTelemetryEvent> telemetryEvents = new();
@@ -41,8 +41,8 @@ namespace Bicep.LanguageServer.Telemetry
             {
                 foreach (var kvp in linterRulesProvider.GetLinterRules())
                 {
-                    string prevLinterRuleDiagnosticLevelValue = prevConfiguration.Analyzers.GetValue(kvp.Value, "warning");
-                    string curLinterRuleDiagnosticLevelValue = curConfiguration.Analyzers.GetValue(kvp.Value, "warning");
+                    string prevLinterRuleDiagnosticLevelValue = prevConfiguration.Analyzers.GetValue(kvp.Value.diagnosticLevelConfigProperty, "warning");
+                    string curLinterRuleDiagnosticLevelValue = curConfiguration.Analyzers.GetValue(kvp.Value.diagnosticLevelConfigProperty, "warning");
 
                     if (prevLinterRuleDiagnosticLevelValue != curLinterRuleDiagnosticLevelValue)
                     {
@@ -53,6 +53,18 @@ namespace Bicep.LanguageServer.Telemetry
             }
 
             return telemetryEvents;
+        }
+
+        // Per LSP spec - https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#command
+        // title and name are required
+        public static Command CreateCommand(string title, string name, JArray? args)
+        {
+            return new Command()
+            {
+                Title = title,
+                Name = name,
+                Arguments = args
+            };
         }
     }
 }

@@ -14,19 +14,18 @@ namespace Bicep.Core.Semantics
             this.WildcardRegex = wildcardRegex;
         }
 
-        public override FunctionOverload BuildInternal()
+        protected override FunctionOverload BuildInternal()
         {
             return new FunctionWildcardOverload(
                 Name,
                 GenericDescription,
                 Description,
                 WildcardRegex,
-                ReturnTypeBuilder,
+                ResultBuilder,
                 ReturnType,
                 FixedParameters.ToImmutable(),
                 VariableParameter,
                 Evaluator,
-                VariableGenerator,
                 Flags);
         }
     }

@@ -1,26 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using Bicep.Core.Diagnostics;
+using Bicep.Core.Intermediate;
 using Bicep.Core.Semantics;
 using Bicep.Core.Semantics.Metadata;
+using Bicep.Core.Syntax;
+using Newtonsoft.Json.Linq;
 
-namespace Bicep.Core.Emit
-{
-    public class EmitLimitationInfo
-    {
-        public IReadOnlyList<IDiagnostic> Diagnostics { get; }
+namespace Bicep.Core.Emit;
 
-        public ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> ModuleScopeData { get; }
+public record ParameterAssignmentValue(JToken? Value, Expression? Expression, ParameterKeyVaultReferenceExpression? KeyVaultReferenceExpression);
 
-        public ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> ResourceScopeData { get; }
-
-        public EmitLimitationInfo(IReadOnlyList<IDiagnostic> diagnostics, ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> moduleScopeData, ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> resourceScopeData)
-        {
-            Diagnostics = diagnostics;
-            ModuleScopeData = moduleScopeData;
-            ResourceScopeData = resourceScopeData;
-        }
-    }
-}
+public record EmitLimitationInfo(
+    IReadOnlyList<IDiagnostic> Diagnostics,
+    ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> ModuleScopeData,
+    ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> ResourceScopeData,
+    ImmutableDictionary<ParameterAssignmentSymbol, ParameterAssignmentValue> ParameterAssignments);

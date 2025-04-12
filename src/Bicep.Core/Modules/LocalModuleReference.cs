@@ -1,32 +1,35 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.Core.Diagnostics;
-using System.Collections.Generic;
-using System;
 using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
+using Bicep.Core.Diagnostics;
+using Bicep.Core.Registry;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.Utils;
+using Bicep.IO.Abstraction;
 
 namespace Bicep.Core.Modules
 {
     /// <summary>
     /// Represents a reference to a local module (by relative path).
     /// </summary>
-    public class LocalModuleReference : ModuleReference
+    public class LocalModuleReference : ArtifactReference
     {
         private static readonly IEqualityComparer<string> PathComparer = StringComparer.Ordinal;
 
-        private LocalModuleReference(string path)
-            : base(ModuleReferenceSchemes.Local)
+        private LocalModuleReference(BicepSourceFile referencingFile, ArtifactType artifactType, RelativePath path)
+            : base(referencingFile, ArtifactReferenceSchemes.Local)
         {
+            ArtifactType = artifactType;
             this.Path = path;
         }
+
+        public ArtifactType ArtifactType { get; }
 
         /// <summary>
         /// Gets the relative path to the module.
         /// </summary>
-        public string Path { get; }
+        public RelativePath Path { get; }
 
         public override bool Equals(object? obj)
         {
@@ -46,72 +49,7 @@ namespace Bicep.Core.Modules
 
         public override bool IsExternal => false;
 
-        public static LocalModuleReference? TryParse(string unqualifiedReference, out DiagnosticBuilder.ErrorBuilderDelegate? failureBuilder)
-        {
-            if (!Validate(unqualifiedReference, out failureBuilder))
-            {
-                return null;
-            }
-
-            return new(unqualifiedReference);
-        }
-
-        public static bool Validate(string pathName, [NotNullWhen(false)] out DiagnosticBuilder.ErrorBuilderDelegate? failureBuilder)
-        {
-            if (pathName.Length == 0)
-            {
-                failureBuilder = x => x.FilePathIsEmpty();
-                return false;
-            }
-
-            if (pathName.First() == '/')
-            {
-                failureBuilder = x => x.FilePathBeginsWithForwardSlash();
-                return false;
-            }
-
-            foreach (var pathChar in pathName)
-            {
-                if (pathChar == '\\')
-                {
-                    // enforce '/' rather than '\' for module paths for cross-platform compatibility
-                    failureBuilder = x => x.FilePathContainsBackSlash();
-                    return false;
-                }
-
-                if (forbiddenPathChars.Contains(pathChar))
-                {
-                    failureBuilder = x => x.FilePathContainsForbiddenCharacters(forbiddenPathChars);
-                    return false;
-                }
-
-                if (IsInvalidPathControlCharacter(pathChar))
-                {
-                    failureBuilder = x => x.FilePathContainsControlChars();
-                    return false;
-                }
-            }
-
-            if (forbiddenPathTerminatorChars.Contains(pathName.Last()))
-            {
-                failureBuilder = x => x.FilePathHasForbiddenTerminator(forbiddenPathTerminatorChars);
-                return false;
-            }
-
-            failureBuilder = null;
-            return true;
-        }
-
-        private static readonly ImmutableHashSet<char> forbiddenPathChars = "<>:\"\\|?*".ToImmutableHashSet();
-        private static readonly ImmutableHashSet<char> forbiddenPathTerminatorChars = " .".ToImmutableHashSet();
-
-        private static bool IsInvalidPathControlCharacter(char pathChar)
-        {
-            // TODO: Revisit when we add unicode support to Bicep
-
-            // The following are disallowed as path chars on Windows, so we block them to avoid cross-platform compilation issues.
-            // Note that we're checking this range explicitly, as char.IsControl() includes some characters that are valid path characters.
-            return pathChar >= 0 && pathChar <= 31;
-        }
+        public static ResultWithDiagnosticBuilder<LocalModuleReference> TryParse(BicepSourceFile referencingFile, ArtifactType artifactType, string unqualifiedReference) =>
+            RelativePath.TryCreate(unqualifiedReference).Transform(relativePath => new LocalModuleReference(referencingFile, artifactType, relativePath));
     }
 }

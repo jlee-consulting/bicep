@@ -1,10 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.IO;
-using System.Linq;
+using System.Collections.Immutable;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using System.Reflection;
 using System.Text;
+using Bicep.IO.Abstraction;
+using Bicep.IO.FileSystem;
+using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Bicep.Core.UnitTests.Utils
@@ -12,7 +15,7 @@ namespace Bicep.Core.UnitTests.Utils
     public static class FileHelper
     {
         public static string GetUniqueTestOutputPath(TestContext testContext)
-            => Path.Combine(testContext.ResultsDirectory, Guid.NewGuid().ToString());
+            => Path.Combine(testContext.ResultsDirectory!, Guid.NewGuid().ToString());
 
         public static string GetResultFilePath(TestContext testContext, string fileName, string? testOutputPath = null)
         {
@@ -77,6 +80,48 @@ namespace Bicep.Core.UnitTests.Utils
             return outputDirectory;
         }
 
-        public static string GetCacheRootPath(TestContext testContext) => GetUniqueTestOutputPath(testContext);
+        public static IDirectoryHandle GetCacheRootDirectory(TestContext testContext)
+        {
+            var path = GetUniqueTestOutputPath(testContext);
+            var uri = IOUri.FromLocalFilePath(path);
+
+            return BicepTestConstants.FileExplorer.GetDirectory(uri);
+        }
+
+        public static ImmutableDictionary<string, string> BuildEmbeddedFileDictionary(Assembly containingAssembly, string streamNamePrefix)
+        {
+            var matches = containingAssembly
+                .GetManifestResourceNames()
+                .Where(streamName => streamName.StartsWith(streamNamePrefix, StringComparison.Ordinal))
+                .Select(streamName => (streamName, key: streamName.Substring(streamNamePrefix.Length)));
+
+            var builder = ImmutableDictionary.CreateBuilder<string, string>();
+
+            foreach (var (streamName, key) in matches)
+            {
+                builder.Add(key, ReadEmbeddedFile(containingAssembly, streamName));
+            }
+
+            return builder.ToImmutable();
+        }
+
+        public static string ReadEmbeddedFile(Assembly containingAssembly, string streamName)
+        {
+            using var stream = containingAssembly.GetManifestResourceStream(streamName);
+            stream.Should().NotBeNull($"because stream '{streamName}' should exist");
+
+            using var reader = new StreamReader(stream!);
+
+            return reader.ReadToEnd();
+        }
+
+        public static IFileSystem CreateMockFileSystemForEmbeddedFiles(Assembly containingAssembly, string streamNamePrefix)
+        {
+            var files = BuildEmbeddedFileDictionary(containingAssembly, streamNamePrefix);
+
+            return new MockFileSystem(files.ToDictionary(
+                x => x.Key,
+                x => new MockFileData(x.Value)));
+        }
     }
 }

@@ -1,26 +1,28 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
-using System.Linq;
+
 using Bicep.Core.Diagnostics;
-using Bicep.Core.Parsing;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
-using Bicep.Core.TypeSystem.Az;
+using Bicep.Core.Text;
+using Bicep.Core.TypeSystem.Providers;
+using Bicep.Core.TypeSystem.Providers.Az;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.TypeSystem
 {
-    public abstract class DeployTimeConstantViolationVisitor : SyntaxVisitor
+    public abstract class DeployTimeConstantViolationVisitor : AstVisitor
     {
         public DeployTimeConstantViolationVisitor(
             SyntaxBase deployTimeConstantContainer,
             SemanticModel semanticModel,
-            IDiagnosticWriter diagnosticWriter)
+            IDiagnosticWriter diagnosticWriter,
+            ResourceTypeResolver resourceTypeResolver)
         {
             this.DeployTimeConstantContainer = deployTimeConstantContainer;
             this.SemanticModel = semanticModel;
             this.DiagnosticWriter = diagnosticWriter;
+            this.ResourceTypeResolver = resourceTypeResolver;
         }
 
         protected SyntaxBase DeployTimeConstantContainer { get; }
@@ -29,7 +31,9 @@ namespace Bicep.Core.TypeSystem
 
         protected IDiagnosticWriter DiagnosticWriter { get; }
 
-        protected void FlagDeployTimeConstantViolation(SyntaxBase errorSyntax, DeclaredSymbol? accessedSymbol = null, ObjectType? accessedObjectType = null, IEnumerable<string>? variableDependencyChain = null)
+        protected ResourceTypeResolver ResourceTypeResolver { get; }
+
+        protected void FlagDeployTimeConstantViolation(SyntaxBase errorSyntax, DeclaredSymbol? accessedSymbol = null, ObjectType? accessedObjectType = null, IEnumerable<string>? variableDependencyChain = null, string? violatingPropertyName = null)
         {
             var accessedSymbolName = accessedSymbol?.Name;
             var accessiblePropertyNames = GetAccessiblePropertyNames(accessedSymbol, accessedObjectType);
@@ -50,11 +54,12 @@ namespace Bicep.Core.TypeSystem
 
                 // Corner case: the runtime value is in the for-body of a variable declaration.
                 ForSyntax forSyntax when ErrorSyntaxInForBodyOfVariable(forSyntax, errorSyntax) is string variableName =>
-                    diagnosticBuilder.RuntimeValueNotAllowedInVariableForBody(variableName, accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
+                    diagnosticBuilder.RuntimeValueNotAllowedInVariableForBody(variableName, accessedSymbolName, accessiblePropertyNames, variableDependencyChain, violatingPropertyName),
 
                 ForSyntax => diagnosticBuilder.RuntimeValueNotAllowedInForExpression(accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
                 FunctionCallSyntaxBase functionCallSyntaxBase => diagnosticBuilder.RuntimeValueNotAllowedInRunTimeFunctionArguments(functionCallSyntaxBase.Name.IdentifierName, accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
-                _ => throw new ArgumentOutOfRangeException(nameof(this.DeployTimeConstantContainer), "Expected an ObjectPropertySyntax with a propertyName, a IfConditionSyntax, a ForSyntax, or a FunctionCallSyntaxBase."),
+                FunctionDeclarationSyntax => diagnosticBuilder.RuntimeValueNotAllowedInFunctionDeclaration(accessedSymbolName, accessiblePropertyNames, variableDependencyChain),
+                _ => throw new ArgumentOutOfRangeException(nameof(this.DeployTimeConstantContainer), "Expected an ObjectPropertySyntax with a propertyName, an IfConditionSyntax, a ForSyntax, a FunctionCallSyntaxBase, or a FunctionDeclarationSyntax."),
             };
 
             this.DiagnosticWriter.Write(diagnostic);
@@ -65,21 +70,6 @@ namespace Bicep.Core.TypeSystem
             TextSpan.AreOverlapping(errorSyntax, forSyntax.Body)
                 ? variableDeclarationSyntax.Name.IdentifierName
                 : null;
-
-        protected (DeclaredSymbol?, ObjectType?) TryExtractResourceOrModuleSymbolAndBodyType(SyntaxBase syntax, bool isCollection)
-        {
-            if (syntax is ArrayAccessSyntax { BaseExpression: var baseSyntax })
-            {
-                return TryExtractResourceOrModuleSymbolAndBodyType(baseSyntax, true);
-            }
-
-            return this.SemanticModel.GetSymbolInfo(syntax) switch
-            {
-                ResourceSymbol resourceSymbol when resourceSymbol.IsCollection == isCollection => (resourceSymbol, resourceSymbol.TryGetBodyObjectType()),
-                ModuleSymbol moduleSymbol when moduleSymbol.IsCollection == isCollection => (moduleSymbol, moduleSymbol.TryGetBodyObjectType()),
-                _ => (null, null),
-            };
-        }
 
         private static IEnumerable<string>? GetAccessiblePropertyNames(DeclaredSymbol? accessedSymbol, ObjectType? accessedObjectType)
         {

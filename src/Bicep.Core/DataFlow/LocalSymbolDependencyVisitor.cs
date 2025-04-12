@@ -1,14 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Collections.Immutable;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
-using System.Collections.Generic;
-using System.Collections.Immutable;
 
 namespace Bicep.Core.DataFlow
 {
-    public sealed class LocalSymbolDependencyVisitor : SyntaxVisitor
+    public sealed class LocalSymbolDependencyVisitor : AstVisitor
     {
         private readonly SemanticModel semanticModel;
 
@@ -24,7 +23,7 @@ namespace Bicep.Core.DataFlow
             var visitor = new LocalSymbolDependencyVisitor(semanticModel);
             visitor.Visit(syntax);
 
-            return visitor.SymbolDependencies.ToImmutableHashSet();
+            return [.. visitor.SymbolDependencies];
         }
 
         public override void VisitVariableAccessSyntax(VariableAccessSyntax syntax)

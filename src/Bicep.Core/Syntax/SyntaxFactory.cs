@@ -1,68 +1,127 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.RegularExpressions;
-using Bicep.Core.Diagnostics;
+using System.Collections.Immutable;
+using System.ComponentModel;
+using System.ServiceModel;
 using Bicep.Core.Extensions;
+using Bicep.Core.Intermediate;
 using Bicep.Core.Parsing;
+using Bicep.Core.Text;
+using Json.Pointer;
 
 namespace Bicep.Core.Syntax
 {
     public static class SyntaxFactory
     {
-        public static readonly TextSpan EmptySpan = new TextSpan(0, 0);
+        public static readonly IEnumerable<SyntaxTrivia> EmptyTrivia = [];
 
-        public static readonly IEnumerable<SyntaxTrivia> EmptyTrivia = Enumerable.Empty<SyntaxTrivia>();
+        public static readonly IEnumerable<SyntaxTrivia> SingleSpaceTrivia = ImmutableArray.Create(
+            new SyntaxTrivia(SyntaxTriviaType.Whitespace, TextSpan.Nil, " "));
 
-        public static readonly SkippedTriviaSyntax EmptySkippedTrivia = new SkippedTriviaSyntax(EmptySpan, Enumerable.Empty<SyntaxBase>(), Enumerable.Empty<IDiagnostic>());
+        public static readonly SkippedTriviaSyntax EmptySkippedTrivia = new(TextSpan.Nil, []);
 
-        public static Token CreateToken(TokenType tokenType, string text = "")
-            => new Token(tokenType, EmptySpan, string.IsNullOrEmpty(text) ? TryGetTokenText(tokenType) : text, EmptyTrivia, EmptyTrivia);
+        public static readonly ProgramSyntax EmptyProgram = new(Array.Empty<SyntaxBase>(), EndOfFileToken);
 
-        public static IdentifierSyntax CreateIdentifier(string text) => new(CreateToken(TokenType.Identifier, text));
+        public static Token CreateToken(TokenType tokenType, IEnumerable<SyntaxTrivia>? leadingTrivia = null, IEnumerable<SyntaxTrivia>? trailingTrivia = null)
+        {
+            leadingTrivia ??= EmptyTrivia;
+            trailingTrivia ??= EmptyTrivia;
+
+            return new(tokenType, TextSpan.Nil, leadingTrivia, trailingTrivia);
+        }
+
+        public static FreeformToken CreateFreeformToken(TokenType tokenType, string text, IEnumerable<SyntaxTrivia>? leadingTrivia = null, IEnumerable<SyntaxTrivia>? trailingTrivia = null)
+        {
+            leadingTrivia ??= EmptyTrivia;
+            trailingTrivia ??= EmptyTrivia;
+
+            return new(tokenType, TextSpan.Nil, text, leadingTrivia, trailingTrivia);
+        }
+
+        public static FreeformToken CreateIdentifierToken(string text, IEnumerable<SyntaxTrivia>? leadingTrivia = null, IEnumerable<SyntaxTrivia>? trailingTrivia = null) =>
+            CreateFreeformToken(TokenType.Identifier, text, leadingTrivia, trailingTrivia);
+
+        public static FreeformToken CreateIdentifierTokenWithTrailingSpace(string text) => CreateIdentifierToken(text, EmptyTrivia, SingleSpaceTrivia);
+
+        public static IdentifierSyntax CreateIdentifier(string text) => new(CreateIdentifierToken(text));
+
+        public static IdentifierSyntax CreateIdentifierWithTrailingSpace(string text) => new(CreateIdentifierTokenWithTrailingSpace(text));
 
         public static VariableAccessSyntax CreateVariableAccess(string text) => new(CreateIdentifier(text));
 
-        public static ExplicitVariableAccessSyntax CreateExplicitVariableAccess(string text) => new(CreateIdentifier(text));
+        public static VariableBlockSyntax CreateVariableBlock(IEnumerable<IdentifierSyntax> variables)
+            => new(
+                LeftParenToken,
+                Interleave(variables.Select(x => new LocalVariableSyntax(x)), () => CommaToken),
+                SyntaxFactory.RightParenToken);
 
-        public static Token NewlineToken => CreateToken(TokenType.NewLine, Environment.NewLine);
-        public static Token AtToken => CreateToken(TokenType.At, "@");
-        public static Token LeftBraceToken => CreateToken(TokenType.LeftBrace, "{");
-        public static Token RightBraceToken => CreateToken(TokenType.RightBrace, "}");
-        public static Token LeftParenToken => CreateToken(TokenType.LeftParen, "(");
-        public static Token RightParenToken => CreateToken(TokenType.RightParen, ")");
-        public static Token LeftSquareToken => CreateToken(TokenType.LeftSquare, "[");
-        public static Token RightSquareToken => CreateToken(TokenType.RightSquare, "]");
-        public static Token CommaToken => CreateToken(TokenType.Comma, ",");
-        public static Token DotToken => CreateToken(TokenType.Dot, ".");
-        public static Token QuestionToken => CreateToken(TokenType.Question, "?");
-        public static Token ColonToken => CreateToken(TokenType.Colon, ":");
-        public static Token SemicolonToken => CreateToken(TokenType.Semicolon, ";");
-        public static Token AssignmentToken => CreateToken(TokenType.Assignment, "=");
-        public static Token PlusToken => CreateToken(TokenType.Plus, "+");
-        public static Token MinusToken => CreateToken(TokenType.Minus, "-");
-        public static Token AsteriskToken => CreateToken(TokenType.Asterisk, "*");
-        public static Token SlashToken => CreateToken(TokenType.Slash, "/");
-        public static Token ModuloToken => CreateToken(TokenType.Modulo, "%");
-        public static Token ExclamationToken => CreateToken(TokenType.Exclamation, "!");
-        public static Token LessThanToken => CreateToken(TokenType.LessThan, "<");
-        public static Token GreaterThanToken => CreateToken(TokenType.GreaterThan, ">");
-        public static Token LessThanOrEqualToken => CreateToken(TokenType.LessThanOrEqual, "<=");
-        public static Token GreaterThanOrEqualToken => CreateToken(TokenType.GreaterThanOrEqual, ">=");
-        public static Token EqualsToken => CreateToken(TokenType.Equals, "==");
-        public static Token NotEqualsToken => CreateToken(TokenType.NotEquals, "!=");
-        public static Token EqualsInsensitiveToken => CreateToken(TokenType.EqualsInsensitive, "=~");
-        public static Token NotEqualsInsensitiveToken => CreateToken(TokenType.NotEqualsInsensitive, "!~");
-        public static Token LogicalAndToken => CreateToken(TokenType.LogicalAnd, "&&");
-        public static Token LogicalOrToken => CreateToken(TokenType.LogicalOr, "||");
-        public static Token TrueKeywordToken => CreateToken(TokenType.TrueKeyword, "true");
-        public static Token FalseKeywordToken => CreateToken(TokenType.FalseKeyword, "false");
-        public static Token NullKeywordToken => CreateToken(TokenType.NullKeyword, "null");
+        public static Token DoubleNewlineToken => CreateFreeformToken(TokenType.NewLine, Environment.NewLine + Environment.NewLine);
+        public static Token NewlineToken => CreateFreeformToken(TokenType.NewLine, Environment.NewLine);
+        public static Token GetNewlineToken(IEnumerable<SyntaxTrivia>? leadingTrivia = null, IEnumerable<SyntaxTrivia>? trailingTrivia = null)
+            => CreateFreeformToken(TokenType.NewLine, Environment.NewLine, leadingTrivia, trailingTrivia);
+        public static Token AtToken => CreateToken(TokenType.At);
+        public static Token LeftBraceToken => CreateToken(TokenType.LeftBrace);
+        public static Token RightBraceToken => CreateToken(TokenType.RightBrace);
+        public static Token LeftParenToken => CreateToken(TokenType.LeftParen);
+        public static Token RightParenToken => CreateToken(TokenType.RightParen);
+        public static Token LeftSquareToken => CreateToken(TokenType.LeftSquare);
+        public static Token RightSquareToken => CreateToken(TokenType.RightSquare);
+        public static Token CommaToken => GetCommaToken();
+        public static Token GetCommaToken(IEnumerable<SyntaxTrivia>? leadingTrivia = null, IEnumerable<SyntaxTrivia>? trailingTrivia = null)
+            => CreateToken(TokenType.Comma, leadingTrivia, trailingTrivia);
+        public static Token DotToken => CreateToken(TokenType.Dot);
+        public static Token QuestionToken => CreateToken(TokenType.Question);
+        public static Token DoubleQuestionToken => CreateToken(TokenType.DoubleQuestion);
+        public static Token ColonToken => CreateToken(TokenType.Colon);
+        public static Token SemicolonToken => CreateToken(TokenType.Semicolon);
+        public static Token AssignmentToken => CreateToken(TokenType.Assignment, EmptyTrivia, SingleSpaceTrivia);
+        public static Token PlusToken => CreateToken(TokenType.Plus);
+        public static Token MinusToken => CreateToken(TokenType.Minus);
+        public static Token AsteriskToken => CreateToken(TokenType.Asterisk);
+        public static Token SlashToken => CreateToken(TokenType.Slash);
+        public static Token ModuloToken => CreateToken(TokenType.Modulo);
+        public static Token ExclamationToken => CreateToken(TokenType.Exclamation);
+        public static Token LessThanToken => CreateToken(TokenType.LeftChevron);
+        public static Token GreaterThanToken => CreateToken(TokenType.RightChevron);
+        public static Token LessThanOrEqualToken => CreateToken(TokenType.LessThanOrEqual);
+        public static Token GreaterThanOrEqualToken => CreateToken(TokenType.GreaterThanOrEqual);
+        public static Token EqualsToken => CreateToken(TokenType.Equals);
+        public static Token NotEqualsToken => CreateToken(TokenType.NotEquals);
+        public static Token EqualsInsensitiveToken => CreateToken(TokenType.EqualsInsensitive);
+        public static Token NotEqualsInsensitiveToken => CreateToken(TokenType.NotEqualsInsensitive);
+        public static Token LogicalAndToken => CreateToken(TokenType.LogicalAnd);
+        public static Token LogicalOrToken => CreateToken(TokenType.LogicalOr);
+        public static Token TrueKeywordToken => CreateToken(TokenType.TrueKeyword);
+        public static Token FalseKeywordToken => CreateToken(TokenType.FalseKeyword);
+        public static Token NullKeywordToken => CreateToken(TokenType.NullKeyword);
+        public static Token ArrowToken => CreateToken(TokenType.Arrow);
+        public static Token EndOfFileToken => CreateToken(TokenType.EndOfFile);
+        public static Token EllipsisToken => CreateToken(TokenType.Ellipsis);
+        public static Token HatToken => CreateToken(TokenType.Hat);
+        public static Token TargetScopeKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.TargetScopeKeyword);
+        public static Token ImportKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.ImportKeyword);
+        public static Token ExtensionKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.ExtensionKeyword);
+        public static Token UsingKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.UsingKeyword);
+        public static Token MetadataKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.MetadataKeyword);
+        public static Token ParameterKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.ParameterKeyword);
+        public static Token VariableKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.VariableKeyword);
+        public static Token ResourceKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.ResourceKeyword);
+        public static Token ModuleKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.ModuleKeyword);
+        public static Token OutputKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.OutputKeyword);
+        public static Token IfKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.IfKeyword);
+        public static Token ForKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.ForKeyword);
+        public static Token InKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.InKeyword);
+        public static Token TypeKeywordToken => CreateIdentifierTokenWithTrailingSpace(LanguageConstants.TypeKeyword);
 
         public static ObjectPropertySyntax CreateObjectProperty(string key, SyntaxBase value)
-            => new ObjectPropertySyntax(CreateObjectPropertyKey(key), CreateToken(TokenType.Colon, ":"), value);
+        {
+            if (value is SkippedTriviaSyntax)
+            {
+                return new ObjectPropertySyntax(CreateObjectPropertyKey(key), CreateToken(TokenType.Colon, EmptyTrivia), value);
+            }
+
+            return new ObjectPropertySyntax(CreateObjectPropertyKey(key), CreateToken(TokenType.Colon, EmptyTrivia, SingleSpaceTrivia), value);
+        }
 
         public static ObjectSyntax CreateObject(IEnumerable<ObjectPropertySyntax> properties)
         {
@@ -81,7 +140,7 @@ namespace Bicep.Core.Syntax
         }
 
         public static ArrayItemSyntax CreateArrayItem(SyntaxBase value)
-            => new ArrayItemSyntax(value);
+            => new(value);
 
         public static ForSyntax CreateRangedForSyntax(string indexIdentifier, SyntaxBase count, SyntaxBase body)
         {
@@ -89,11 +148,10 @@ namespace Bicep.Core.Syntax
             var rangeSyntax = new FunctionCallSyntax(
                 CreateIdentifier("range"),
                 LeftParenToken,
-                new FunctionArgumentSyntax[] {
-                    new FunctionArgumentSyntax(
-                        new IntegerLiteralSyntax(CreateToken(TokenType.Integer, "0"), 0),
-                        CommaToken),
-                    new FunctionArgumentSyntax(count, null),
+                new SyntaxBase[] {
+                    new FunctionArgumentSyntax(new IntegerLiteralSyntax(CreateFreeformToken(TokenType.Integer, "0"), 0)),
+                    CommaToken,
+                    new FunctionArgumentSyntax(count),
                 },
                 RightParenToken);
 
@@ -105,22 +163,30 @@ namespace Bicep.Core.Syntax
             // generates "[for <identifier> in <inSyntax>: <body>]"
             return new(
                 LeftSquareToken,
-                CreateToken(TokenType.Identifier, "for"),
-                new LocalVariableSyntax(new IdentifierSyntax(CreateToken(TokenType.Identifier, indexIdentifier))),
-                CreateToken(TokenType.Identifier, "in"),
+                [],
+                ForKeywordToken,
+                new LocalVariableSyntax(CreateIdentifierWithTrailingSpace(indexIdentifier)),
+                InKeywordToken,
                 inSyntax,
                 ColonToken,
                 body,
+                [],
                 RightSquareToken);
         }
 
         public static ArraySyntax CreateArray(IEnumerable<SyntaxBase> items)
         {
-            var children = new List<SyntaxBase> { NewlineToken };
+            var children = new List<SyntaxBase>();
 
             foreach (var item in items)
             {
+                children.Add(NewlineToken);
                 children.Add(CreateArrayItem(item));
+            }
+
+            if (children.Any())
+            {
+                // only add a newline if we actually have children
                 children.Add(NewlineToken);
             }
 
@@ -130,11 +196,12 @@ namespace Bicep.Core.Syntax
                 RightSquareToken);
         }
 
-        public static ArrayAccessSyntax CreateArrayAccess(SyntaxBase baseExpression, SyntaxBase indexExpression) => new(baseExpression, LeftSquareToken, indexExpression, RightSquareToken);
+        public static ArrayAccessSyntax CreateArrayAccess(SyntaxBase baseExpression, SyntaxBase indexExpression, bool safeAccess = false, bool fromEnd = false)
+            => new(baseExpression, LeftSquareToken, safeAccess ? QuestionToken : null, fromEnd ? HatToken : null, indexExpression, RightSquareToken);
 
         public static SyntaxBase CreateObjectPropertyKey(string text)
         {
-            if (Regex.IsMatch(text, "^[a-zA-Z][a-zA-Z0-9_]*$"))
+            if (Lexer.IsValidIdentifier(text))
             {
                 return CreateIdentifier(text);
             }
@@ -142,13 +209,45 @@ namespace Bicep.Core.Syntax
             return CreateStringLiteral(text);
         }
 
-        public static IntegerLiteralSyntax CreateIntegerLiteral(ulong value) => new(CreateToken(TokenType.Integer, value.ToString()), value);
+        public static IntegerLiteralSyntax CreateIntegerLiteral(ulong value) => new(CreateFreeformToken(TokenType.Integer, value.ToString()), value);
 
         public static UnaryOperationSyntax CreateNegativeIntegerLiteral(ulong value) => new(MinusToken, CreateIntegerLiteral(value));
 
-        public static StringSyntax CreateStringLiteral(string value) => CreateString(value.AsEnumerable(), Enumerable.Empty<SyntaxBase>());
+        public static ExpressionSyntax CreatePositiveOrNegativeInteger(long intValue)
+        {
+            if (intValue >= 0)
+            {
+                return SyntaxFactory.CreateIntegerLiteral((ulong)intValue);
+            }
+            else
+            {
+                return SyntaxFactory.CreateNegativeIntegerLiteral((ulong)-intValue);
+            }
+        }
 
-        public static BooleanLiteralSyntax CreateBooleanLiteral(bool value) => new(TrueKeywordToken, value);
+        public static StringSyntax CreateMultilineString(string value, IEnumerable<SyntaxTrivia>? leadingTrivia = null, IEnumerable<SyntaxTrivia>? trailingTrivia = null)
+        {
+            // It's the responsibility of the caller to have already verified this, to avoid throwing here.
+            if (value.Contains("'''"))
+            {
+                throw new ArgumentException("The value must not contain the sequence '''");
+            }
+
+            // there's intentionally no escaping for a multi-line string
+            var tokenValue = $"'''{value}'''";
+
+            return new(
+                [CreateFreeformToken(TokenType.MultilineString, tokenValue, leadingTrivia, trailingTrivia)],
+                [],
+                [value]);
+        }
+
+        public static StringSyntax CreateStringLiteral(string value) => CreateString(value.AsEnumerable(), []);
+
+        public static StringSyntax CreateStringLiteralWithTextSpan(string value)
+            => new(new FreeformToken(TokenType.StringComplete, new TextSpan(0, value.Length), value, [], []).AsEnumerable(), [], [value]);
+
+        public static BooleanLiteralSyntax CreateBooleanLiteral(bool value) => new(value ? TrueKeywordToken : FalseKeywordToken, value);
 
         public static NullLiteralSyntax CreateNullLiteral() => new(NullKeywordToken);
 
@@ -174,17 +273,32 @@ namespace Bicep.Core.Syntax
             return new StringSyntax(stringTokens, expressionsArray, valuesArray);
         }
 
+        private static StringSyntax CreateStringSyntaxWithComment(string value, string comment)
+        {
+            var trailingTrivia = new SyntaxTrivia(SyntaxTriviaType.MultiLineComment, TextSpan.Nil, $"/*{comment.Replace("*/", "*\\/")}*/");
+            var stringToken = CreateFreeformToken(TokenType.StringComplete, value, EmptyTrivia, SyntaxFactory.SingleSpaceTrivia.Append(trailingTrivia));
+
+            return new StringSyntax(stringToken.AsEnumerable(), [], value.AsEnumerable());
+        }
+
         public static StringSyntax CreateStringLiteralWithComment(string value, string comment)
         {
-            var trailingTrivia = new SyntaxTrivia(SyntaxTriviaType.MultiLineComment, EmptySpan, $"/*{comment.Replace("*/", "*\\/")}*/");
-            var stringToken = new Token(TokenType.StringComplete, EmptySpan, $"'{EscapeBicepString(value)}'", EmptyTrivia, trailingTrivia.AsEnumerable());
+            return CreateStringSyntaxWithComment($"'{EscapeBicepString(value)}'", comment);
+        }
 
-            return new StringSyntax(stringToken.AsEnumerable(), Enumerable.Empty<SyntaxBase>(), value.AsEnumerable());
+        public static StringSyntax CreateEmptySyntaxWithComment(string comment)
+        {
+            return CreateStringSyntaxWithComment("", comment);
+        }
+
+        public static StringSyntax CreateInvalidSyntaxWithComment(string comment)
+        {
+            return CreateStringSyntaxWithComment("?", comment);
         }
 
         public static Token CreateStringLiteralToken(string value)
         {
-            return CreateToken(TokenType.StringComplete, $"'{EscapeBicepString(value)}'");
+            return CreateFreeformToken(TokenType.StringComplete, $"'{EscapeBicepString(value)}'");
         }
 
         public static StringSyntax CreateInterpolatedKey(SyntaxBase syntax)
@@ -202,40 +316,34 @@ namespace Bicep.Core.Syntax
         {
             return (isStart, isEnd) switch
             {
-                (true, true) => CreateToken(TokenType.StringComplete, $"'{EscapeBicepString(value)}'"),
-                (true, false) => CreateToken(TokenType.StringLeftPiece, $"'{EscapeBicepString(value)}${{"),
-                (false, false) => CreateToken(TokenType.StringMiddlePiece, $"}}{EscapeBicepString(value)}${{"),
-                (false, true) => CreateToken(TokenType.StringRightPiece, $"}}{EscapeBicepString(value)}'"),
+                (true, true) => CreateFreeformToken(TokenType.StringComplete, $"'{EscapeBicepString(value)}'"),
+                (true, false) => CreateFreeformToken(TokenType.StringLeftPiece, $"'{EscapeBicepString(value)}${{"),
+                (false, false) => CreateFreeformToken(TokenType.StringMiddlePiece, $"}}{EscapeBicepString(value)}${{"),
+                (false, true) => CreateFreeformToken(TokenType.StringRightPiece, $"}}{EscapeBicepString(value)}'"),
             };
         }
 
-        public static FunctionCallSyntax CreateFunctionCall(string functionName)
-            => CreateFunctionCall(functionName, new FunctionArgumentSyntax[0]);
-
         public static FunctionCallSyntax CreateFunctionCall(string functionName, params SyntaxBase[] argumentExpressions)
-        {
-            var arguments = argumentExpressions.Select((expression, i) => new FunctionArgumentSyntax(
-                expression,
-                i < argumentExpressions.Length - 1 ? CommaToken : null));
-
-            return new FunctionCallSyntax(
+            => new(
                 CreateIdentifier(functionName),
                 LeftParenToken,
-                arguments,
+                Interleave(argumentExpressions.Select(x => new FunctionArgumentSyntax(x)), () => CommaToken),
                 RightParenToken);
-        }
 
-        public static FunctionCallSyntax CreateFunctionCall(string functionName, params FunctionArgumentSyntax[] argumentSyntaxes)
-            => new FunctionCallSyntax(
+        public static InstanceFunctionCallSyntax CreateInstanceFunctionCall(SyntaxBase baseSyntax, string functionName, params SyntaxBase[] argumentExpressions)
+            => new(
+                baseSyntax,
+                DotToken,
                 CreateIdentifier(functionName),
                 LeftParenToken,
-                argumentSyntaxes,
+                Interleave(argumentExpressions.Select(x => new FunctionArgumentSyntax(x)), () => CommaToken),
                 RightParenToken);
 
         public static DecoratorSyntax CreateDecorator(string functionName, params SyntaxBase[] argumentExpressions)
-        {
-            return new DecoratorSyntax(AtToken, CreateFunctionCall(functionName, argumentExpressions));
-        }
+            => new(AtToken, CreateFunctionCall(functionName, argumentExpressions));
+
+        private static IEnumerable<SyntaxBase> Interleave(IEnumerable<SyntaxBase> elements, Func<SyntaxBase> getInterleaveSyntax)
+            => elements.SelectMany((x, i) => i > 0 ? getInterleaveSyntax().AsEnumerable().Concat(x) : x.AsEnumerable());
 
         private static string EscapeBicepString(string value)
             => value
@@ -246,129 +354,89 @@ namespace Bicep.Core.Syntax
             .Replace("${", "\\${")
             .Replace("'", "\\'");
 
-        private static string TryGetTokenText(TokenType tokenType) => tokenType switch
+        public static Token CreateNewLineWithIndent(string indent) => GetNewlineToken(
+            trailingTrivia: new SyntaxTrivia(SyntaxTriviaType.Whitespace, TextSpan.Nil, indent).AsEnumerable());
+
+        public static LambdaSyntax CreateLambdaSyntax(IReadOnlyList<string> parameterNames, SyntaxBase functionExpression)
         {
-            TokenType.At => "@",
-            TokenType.LeftBrace => "{",
-            TokenType.RightBrace => "}",
-            TokenType.LeftParen => "(",
-            TokenType.RightParen => ")",
-            TokenType.LeftSquare => "[",
-            TokenType.RightSquare => "]",
-            TokenType.Comma => ",",
-            TokenType.Dot => ".",
-            TokenType.Question => "?",
-            TokenType.Colon => ":",
-            TokenType.Semicolon => ";",
-            TokenType.Assignment => "=",
-            TokenType.Plus => "+",
-            TokenType.Minus => "-",
-            TokenType.Asterisk => "*",
-            TokenType.Slash => "/",
-            TokenType.Modulo => "%",
-            TokenType.Exclamation => "!",
-            TokenType.LessThan => "<",
-            TokenType.GreaterThan => ">",
-            TokenType.LessThanOrEqual => "<=",
-            TokenType.GreaterThanOrEqual => ">=",
-            TokenType.Equals => "==",
-            TokenType.NotEquals => "!=",
-            TokenType.EqualsInsensitive => "=~",
-            TokenType.NotEqualsInsensitive => "!~",
-            TokenType.LogicalAnd => "&&",
-            TokenType.LogicalOr => "||",
-            TokenType.TrueKeyword => "true",
-            TokenType.FalseKeyword => "false",
-            TokenType.NullKeyword => "null",
-            _ => ""
+            SyntaxBase variableBlock = parameterNames.Count switch
+            {
+                1 => new LocalVariableSyntax(SyntaxFactory.CreateIdentifier(parameterNames[0])),
+                _ => new VariableBlockSyntax(
+                    SyntaxFactory.LeftParenToken,
+                    SyntaxFactory.Interleave(parameterNames
+                        .Select(name => new LocalVariableSyntax(SyntaxFactory.CreateIdentifier(name))), () => SyntaxFactory.CommaToken),
+                    SyntaxFactory.RightParenToken),
+            };
+
+            return new LambdaSyntax(
+                variableBlock,
+                SyntaxFactory.ArrowToken,
+                [],
+                functionExpression);
+        }
+
+        public static NonNullAssertionSyntax AsNonNullable(SyntaxBase @base) => @base switch
+        {
+            NonNullAssertionSyntax alreadyNonNull => alreadyNonNull,
+            _ => new NonNullAssertionSyntax(@base, ExclamationToken),
         };
 
-        public static SyntaxBase FlattenStringOperations(SyntaxBase original)
-        {
-            if (original is FunctionCallSyntax functionCallSyntax)
-            {
-                if (functionCallSyntax.NameEquals("concat"))
-                {
-                    // just return the inner portion if there's only one concat entry
-                    if (functionCallSyntax.Arguments.Length == 1)
-                    {
-                        return functionCallSyntax.Arguments.Select(arg => arg.Expression).First();
-                    }
-                    else
-                    {
-                        var concatArguments = new List<FunctionArgumentSyntax>();
-                        foreach (var arg in functionCallSyntax.Arguments)
-                        {
-                            // recurse
-                            var flattenedExpression = FlattenStringOperations(arg.Expression);
+        public static AccessExpressionSyntax CreateAccessSyntax(SyntaxBase @base, string propertyName)
+            => CreateAccessSyntax(@base, false, propertyName);
 
-                            if (flattenedExpression is FunctionCallSyntax childFunction && childFunction.NameEquals("concat"))
-                            {
-                                // concat directly inside a concat - break it out
-                                concatArguments.AddRange(childFunction.Arguments);
-                                continue;
-                            }
+        public static AccessExpressionSyntax CreateAccessSyntax(SyntaxBase @base, bool safe, string propertyName)
+            => Lexer.IsValidIdentifier(propertyName) ?
+                new PropertyAccessSyntax(@base, DotToken, safe ? QuestionToken : null, CreateIdentifier(propertyName)) :
+                CreateArrayAccess(@base, safe, false, CreateStringLiteral(propertyName));
 
-                            concatArguments.Add(new FunctionArgumentSyntax(flattenedExpression, arg.Comma));
-                        }
+        private static ArrayAccessSyntax CreateArrayAccess(SyntaxBase @base, bool safe, bool fromEnd, SyntaxBase accessExpression)
+            => new(@base, LeftSquareToken, safe ? QuestionToken : null, fromEnd ? HatToken : null, accessExpression, RightSquareToken);
 
-                        // overwrite the original expression
-                        functionCallSyntax = CreateFunctionCall("concat", CombineConcatArguments(concatArguments).ToArray());
-                        return functionCallSyntax;
-                    }
-                }
-            }
+        public static AccessExpressionSyntax CreateSafeAccess(SyntaxBase @base, SyntaxBase accessExpression)
+            => (accessExpression is StringSyntax stringAccess && stringAccess.TryGetLiteralValue() is { } stringValue) ?
+                CreateAccessSyntax(@base, true, stringValue) :
+                CreateArrayAccess(@base, true, false, accessExpression);
 
-            // return unchanged
-            return original;
-        }
+        public static ParameterAssignmentSyntax CreateParameterAssignmentSyntax(string name, SyntaxBase value)
+            => new(
+                ParameterKeywordToken,
+                CreateIdentifierWithTrailingSpace(name),
+                AssignmentToken,
+                value);
 
-        private static IEnumerable<FunctionArgumentSyntax> CombineConcatArguments(IEnumerable<FunctionArgumentSyntax> arguments)
-        {
-            var stringList = new List<string>();
-            foreach (var argument in arguments)
-            {
-                // accumulate string literals if possible
-                if (argument.Expression is StringSyntax stringSyntax)
-                {
-                    if (!stringSyntax.Expressions.Any())
-                    {
-                        foreach (var text in stringSyntax.SegmentValues)
-                        {
-                            stringList.Add(text);
-                        }
+        public static BinaryOperationSyntax CreateBinaryOperationSyntax(SyntaxBase left, TokenType operatorType, SyntaxBase right)
+            => new(
+                left,
+                CreateToken(operatorType, SingleSpaceTrivia, SingleSpaceTrivia),
+                right);
 
-                        // don't return the string yet - there may be another string to join
-                        continue;
-                    }
-                }
+        public static ParenthesizedExpressionSyntax CreateParenthesized(SyntaxBase inner)
+            => new(LeftParenToken, inner, RightParenToken);
 
-                // check to see if a previous string needs to be yielded back
-                if (stringList.Any())
-                {
-                    yield return new FunctionArgumentSyntax(CreateStringLiteral(string.Join("", stringList)), null);
-                    stringList.Clear();
-                }
+        public static VariableDeclarationSyntax CreateVariableDeclaration(string name, SyntaxBase value, SyntaxBase? type = null, IEnumerable<SyntaxBase>? leadingNodes = null)
+            => new(
+                leadingNodes ?? [],
+                VariableKeywordToken,
+                CreateIdentifierWithTrailingSpace(name),
+                type,
+                AssignmentToken,
+                value);
 
-                // if the arg is not a string it will yield back here
-                yield return argument;
-            }
+        public static ParameterDeclarationSyntax CreateParameterDeclaration(string name, SyntaxBase type, SyntaxBase? defaultValue = null, IEnumerable<SyntaxBase>? leadingNodes = null)
+            => new(
+                leadingNodes ?? [],
+                ParameterKeywordToken,
+                CreateIdentifierWithTrailingSpace(name),
+                type,
+                defaultValue is { } ? new ParameterDefaultValueSyntax(AssignmentToken, defaultValue) : null);
 
-            // yield final string if there is one
-            if (stringList.Any())
-            {
-                yield return new FunctionArgumentSyntax(CreateStringLiteral(string.Join("", stringList)), null);
-            }
-        }
-
-        public static Token CreateNewLineWithIndent(string indent)
-        {
-            return new Token(
-                TokenType.NewLine,
-                SyntaxFactory.EmptySpan,
-                Environment.NewLine,
-                SyntaxFactory.EmptyTrivia,
-                new SyntaxTrivia[] { new SyntaxTrivia(SyntaxTriviaType.Whitespace, SyntaxFactory.EmptySpan, indent) });
-        }
+        public static TypeDeclarationSyntax CreateTypeDeclaration(string name, SyntaxBase typeValue, IEnumerable<SyntaxBase>? leadingNodes = null)
+            => new(
+                leadingNodes ?? [],
+                TypeKeywordToken,
+                CreateIdentifierWithTrailingSpace(name),
+                AssignmentToken,
+                typeValue);
     }
 }

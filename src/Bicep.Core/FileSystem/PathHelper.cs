@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.IO;
+using System.IO.Abstractions;
+using Bicep.Core.Emit.Options;
+using LocalFileSystem = System.IO.Abstractions.FileSystem;
 
 namespace Bicep.Core.FileSystem
 {
@@ -13,6 +14,8 @@ namespace Bicep.Core.FileSystem
 
         private const string BicepExtension = LanguageConstants.LanguageFileExtension;
 
+        private const string BicepParamsExtension = LanguageConstants.ParamsFileExtension;
+
         public static StringComparer PathComparer => IsFileSystemCaseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
         public static StringComparison PathComparison => IsFileSystemCaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -22,15 +25,19 @@ namespace Bicep.Core.FileSystem
         /// </summary>
         /// <param name="path">The path.</param>
         /// <param name="baseDirectory">The base directory to use when resolving relative paths. Set to null to use CWD.</param>
-        public static string ResolvePath(string path, string? baseDirectory = null)
+        /// <param name="fileSystem">The file system abstraction.</param>
+        public static string ResolvePath(string path, string? baseDirectory = null, IFileSystem? fileSystem = null)
         {
-            if (Path.IsPathFullyQualified(path))
+            fileSystem ??= new LocalFileSystem();
+
+            if (fileSystem.Path.IsPathFullyQualified(path))
             {
                 return path;
             }
 
-            baseDirectory ??= Environment.CurrentDirectory;
-            return Path.Combine(baseDirectory, path);
+            baseDirectory ??= fileSystem.Directory.GetCurrentDirectory() ?? Environment.CurrentDirectory;
+
+            return fileSystem.Path.Combine(baseDirectory, path);
         }
 
         /// <summary>
@@ -45,24 +52,46 @@ namespace Bicep.Core.FileSystem
             return Path.GetFullPath(resolvedPath);
         }
 
-        public static string ResolveDefaultOutputPath(string inputPath, string? outputDir, string? outputFile, Func<string, string> defaultOutputPath)
+        public static string ResolveDefaultOutputPath(string inputPath, string? outputDir, string? outputFile, Func<string, string> defaultOutputPath, IFileSystem? fileSystem = null)
         {
+            fileSystem ??= new LocalFileSystem();
+
             if (outputDir is not null)
             {
-                var dir = ResolvePath(outputDir);
-                var file = Path.GetFileName(inputPath);
-                var path = Path.Combine(dir, file);
+                var dir = ResolvePath(outputDir, fileSystem: fileSystem);
+                var file = fileSystem.Path.GetFileName(inputPath);
+                var path = fileSystem.Path.Combine(dir, file);
 
                 return defaultOutputPath(path);
             }
             else if (outputFile is not null)
             {
-                return ResolvePath(outputFile);
+                return ResolvePath(outputFile, fileSystem: fileSystem);
             }
             else
             {
                 return defaultOutputPath(inputPath);
             }
+        }
+
+        public static string ResolveParametersFileOutputPath(string path, OutputFormatOption outputFormat)
+        {
+            var folder = ResolvePath(path);
+
+            var pathWithoutFileName = Path.GetDirectoryName(folder);
+
+            var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(path);
+
+            if (string.IsNullOrWhiteSpace(fileNameWithoutExtension))
+            {
+                fileNameWithoutExtension = "output";
+            }
+
+            var extension = outputFormat == OutputFormatOption.Json ? "parameters.json" : "bicepparam";
+
+            var outputPath = $"{pathWithoutFileName}{Path.DirectorySeparatorChar}{fileNameWithoutExtension}.{extension}";
+
+            return outputPath;
         }
 
         public static string GetDefaultBuildOutputPath(string path)
@@ -87,6 +116,17 @@ namespace Bicep.Core.FileSystem
             return Path.ChangeExtension(path, BicepExtension);
         }
 
+        public static string GetDefaultDecompileparamOutputPath(string path)
+        {
+            if (string.Equals(Path.GetExtension(path), BicepParamsExtension, PathComparison))
+            {
+                // throwing because this could lead to us destroying the input file if extensions get mixed up.
+                throw new ArgumentException($"The specified file already has the '{BicepParamsExtension}' extension.");
+            }
+
+            return Path.ChangeExtension(path, BicepParamsExtension);
+        }
+
         /// <summary>
         /// Returns true if the current file system is case sensitive (most Linux and MacOS X file systems). Returns false if the file system is case insensitive (Windows file systems.)
         /// </summary>
@@ -107,6 +147,7 @@ namespace Bicep.Core.FileSystem
             {
                 filePath = "/" + filePath;
             }
+            filePath = filePath.Replace("%", "%25");
 
             var uriBuilder = new UriBuilder
             {
@@ -129,13 +170,6 @@ namespace Bicep.Core.FileSystem
             return new Uri(uriString);
         }
 
-        public static bool HasAnyExtension(Uri uri)
-        {
-            var path = GetNormalizedPath(uri);
-
-            return Path.HasExtension(path);
-        }
-
         public static bool HasExtension(Uri uri, string extension)
         {
             var path = GetNormalizedPath(uri);
@@ -144,11 +178,13 @@ namespace Bicep.Core.FileSystem
             return path.EndsWith(extension, StringComparison.OrdinalIgnoreCase);
         }
 
-        public static Uri RemoveExtension(Uri uri) => ChangeExtension(uri, null);
-
         public static Uri ChangeToBicepExtension(Uri uri) => ChangeExtension(uri, BicepExtension);
 
+        public static Uri ChangeToBicepparamExtension(Uri uri) => ChangeExtension(uri, BicepParamsExtension);
+
         public static bool HasBicepExtension(Uri uri) => HasExtension(uri, BicepExtension);
+
+        public static bool HasBicepparamsExtension(Uri uri) => HasExtension(uri, BicepParamsExtension);
 
         public static bool HasArmTemplateLikeExtension(Uri uri) =>
                 HasExtension(uri, LanguageConstants.JsonFileExtension) ||
@@ -159,6 +195,38 @@ namespace Bicep.Core.FileSystem
             uri.Scheme != Uri.UriSchemeFile ? uri.AbsoluteUri.TrimEnd('/') : uri.AbsolutePath;
 
         private static string NormalizeExtension(string extension) =>
-            extension.StartsWith(".") ? extension : $".{extension}";
+            extension.StartsWith('.') ? extension : $".{extension}";
+
+        public static bool IsSubPathOf(Uri parent, Uri child)
+        {
+            var parentPath = parent.AbsolutePath.EndsWith('/') ? parent.AbsolutePath : $"{parent.AbsolutePath}/";
+
+            return child.AbsolutePath.StartsWith(parentPath);
+        }
+
+        public static string GetRelativePath(Uri source, Uri target)
+        {
+            if (source.Scheme != target.Scheme)
+            {
+                throw new InvalidOperationException($"Source scheme '{source.Scheme}' does not match target scheme '{target.Scheme}'");
+            }
+
+            if (source == target)
+            {
+                return source.Segments.Last();
+            }
+
+            return source.MakeRelativeUri(target).OriginalString;
+        }
+
+        public static Uri? TryResolveFilePath(Uri parentFileUri, string childFilePath)
+        {
+            if (!Uri.TryCreate(parentFileUri, childFilePath, out var relativeUri))
+            {
+                return null;
+            }
+
+            return relativeUri;
+        }
     }
 }

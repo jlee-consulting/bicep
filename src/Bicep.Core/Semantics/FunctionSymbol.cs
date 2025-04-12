@@ -1,14 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Semantics
 {
-    public class FunctionSymbol : Symbol
+    public class FunctionSymbol : Symbol, IFunctionSymbol
     {
         public FunctionSymbol(ObjectType declaringObject, string name, IEnumerable<FunctionOverload> overloads)
             : base(name)

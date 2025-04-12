@@ -1,18 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Collections.Immutable;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Emit;
-using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Semantics;
-using Bicep.Core.Semantics.Namespaces;
-using Bicep.Core.TypeSystem.Az;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.Syntax;
+using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Providers;
 using Bicep.Core.UnitTests.Assertions;
-using Bicep.Core.Workspaces;
+using Bicep.Core.UnitTests.FileSystem;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
 
@@ -20,80 +18,186 @@ namespace Bicep.Core.UnitTests.Utils
 {
     public static class CompilationHelper
     {
+        public record InputFile(
+            string FileName,
+            string Contents);
+
+        public interface ICompilationResult
+        {
+            IEnumerable<IDiagnostic> Diagnostics { get; }
+
+            Compilation Compilation { get; }
+
+            BicepSourceFile SourceFile { get; }
+        }
+
         public record CompilationResult(
             JToken? Template,
             IEnumerable<IDiagnostic> Diagnostics,
-            Compilation Compilation)
+            Compilation Compilation) : ICompilationResult
         {
-            public BicepFile BicepFile => Compilation.SourceFileGrouping.EntryPoint;
+            public BicepSourceFile SourceFile => Compilation.SourceFileGrouping.EntryPoint;
+
+            public BicepFile BicepFile => (BicepFile)SourceFile;
         }
 
-        public record CompilationHelperContext(
-            IAzResourceTypeLoader? AzResourceTypeLoader = null,
-            IFeatureProvider? Features = null,
-            EmitterSettings? EmitterSettings = null,
-            INamespaceProvider? NamespaceProvider = null)
+        public record ParamsCompilationResult(
+            JToken? Parameters,
+            IEnumerable<IDiagnostic> Diagnostics,
+            Compilation Compilation) : ICompilationResult
         {
-            // TODO: can we use IoC here instead of DIY-ing it?
 
-            public IAzResourceTypeLoader GetAzResourceTypeLoader()
-                => AzResourceTypeLoader ?? BicepTestConstants.AzResourceTypeLoader;
+            public BicepSourceFile SourceFile => Compilation.SourceFileGrouping.EntryPoint;
 
-            public INamespaceProvider GetNamespaceProvider()
-                => NamespaceProvider ?? new DefaultNamespaceProvider(GetAzResourceTypeLoader(), GetFeatures());
-
-            public IFeatureProvider GetFeatures()
-                => Features ?? BicepTestConstants.Features;
-
-            public EmitterSettings GetEmitterSettings()
-                => EmitterSettings ?? new EmitterSettings(GetFeatures());
+            public BicepParamFile ParamsFile => (BicepParamFile)SourceFile;
         }
 
-        public static CompilationResult Compile(CompilationHelperContext context, params (string fileName, string fileContents)[] files)
+        public record CursorLookupResult(
+            SyntaxBase Node,
+            Symbol Symbol,
+            TypeSymbol Type);
+
+        public static async Task<CompilationResult> RestoreAndCompile(params (string fileName, BinaryData fileContents)[] files)
         {
-            var bicepFiles = files.Where(x => x.fileName.EndsWith(".bicep", StringComparison.InvariantCultureIgnoreCase));
-            bicepFiles.Select(x => x.fileName).Should().Contain("main.bicep");
-
-            var systemFiles = files.Where(x => !x.fileName.EndsWith(".bicep", StringComparison.InvariantCultureIgnoreCase));
-
-            var (uriDictionary, entryUri) = CreateFileDictionary(bicepFiles);
-            var fileResolver = new InMemoryFileResolver(CreateFileDictionary(systemFiles).files);
-
-            var configuration = BicepTestConstants.BuiltInConfiguration;
-            var sourceFileGrouping = SourceFileGroupingFactory.CreateForFiles(uriDictionary, entryUri, fileResolver, configuration, context.GetFeatures());
-
-            return Compile(context, new Compilation(context.Features ?? BicepTestConstants.Features, context.GetNamespaceProvider(), sourceFileGrouping, configuration, BicepTestConstants.LinterAnalyzer));
+            return await RestoreAndCompile(new ServiceBuilder(), files);
         }
 
-        public static CompilationResult Compile(IAzResourceTypeLoader resourceTypeLoader, params (string fileName, string fileContents)[] files)
-            => Compile(new CompilationHelperContext(AzResourceTypeLoader: resourceTypeLoader), files);
+        public static async Task<CompilationResult> RestoreAndCompile(ServiceBuilder services, params (string fileName, BinaryData fileContents)[] files)
+        {
+            files.Select(x => x.fileName).Should().Contain("main.bicep");
+
+            var (uriDictionary, entryUri) = CreateFileDictionary(files.Select(file => ("/path/to", file.fileName, file.fileContents)).ToArray(), "main.bicep");
+
+            return await RestoreAndCompile(services.WithMockFileSystem(uriDictionary), ImmutableDictionary<Uri, string>.Empty, entryUri);
+        }
+
+        public static Task<CompilationResult> RestoreAndCompile(ServiceBuilder services, string fileContents)
+            => RestoreAndCompile(services, ("main.bicep", fileContents));
+
+        public static async Task<CompilationResult> RestoreAndCompile(ServiceBuilder services, params (string fileName, string fileContents)[] files)
+        {
+            files.Select(x => x.fileName).Should().Contain("main.bicep");
+            var filesToAppend = files.Select(file => ("/path/to", file.fileName, file.fileContents));
+
+            var (uriDictionary, entryUri) = CreateFileDictionary(filesToAppend, "main.bicep");
+
+            return await RestoreAndCompile(services, uriDictionary, entryUri);
+        }
+
+        public static async Task<CompilationResult> RestoreAndCompile(ServiceBuilder services, IReadOnlyDictionary<Uri, string> uriDictionary, Uri entryUri)
+        {
+            var compiler = services.Build().GetCompiler();
+            var compilation = await compiler.CreateCompilation(entryUri, CreateWorkspace(compiler.SourceFileFactory, uriDictionary));
+
+            return GetCompilationResult(compilation);
+        }
+
+        public static async Task<ParamsCompilationResult> RestoreAndCompileParams(ServiceBuilder services, params (string fileName, string fileContents)[] files)
+        {
+            files.Select(x => x.fileName).Should().Contain("parameters.bicepparam");
+            var filesToAppend = files.Select(file => ("/path/to", file.fileName, file.fileContents));
+
+            var (uriDictionary, entryUri) = CreateFileDictionary(filesToAppend, "parameters.bicepparam");
+
+            return await RestoreAndCompileParams(services, uriDictionary, entryUri);
+        }
+
+        public static async Task<ParamsCompilationResult> RestoreAndCompileParams(ServiceBuilder services, IReadOnlyDictionary<Uri, string> uriDictionary, Uri entryUri)
+        {
+            var compiler = services.WithMockFileSystem(uriDictionary).Build().GetCompiler();
+            var compilation = await compiler.CreateCompilation(entryUri);
+
+            return CompileParams(compilation);
+        }
+
+        public static IWorkspace CreateWorkspace(ISourceFileFactory sourceFileFactory, IReadOnlyDictionary<Uri, string> uriDictionary)
+        {
+            var workspace = new Workspace();
+            var sourceFiles = uriDictionary.Select(kvp => sourceFileFactory.CreateSourceFile(kvp.Key, kvp.Value));
+            workspace.UpsertSourceFiles(sourceFiles);
+
+            return workspace;
+        }
+
+        public static CompilationResult Compile(ServiceBuilder services, params (string fileName, string fileContents)[] files)
+        {
+            files.Select(x => x.fileName).Should().Contain("main.bicep");
+            var filesToAppend = files.Select(file => ("/path/to", file.fileName, file.fileContents));
+
+            var (uriDictionary, entryUri) = CreateFileDictionary(filesToAppend, "main.bicep");
+            var fileResolver = new InMemoryFileResolver(uriDictionary);
+
+            return Compile(services, fileResolver, uriDictionary.Keys, entryUri);
+        }
+
+        public static CompilationResult Compile(ServiceBuilder services, InMemoryFileResolver fileResolver, IEnumerable<Uri> sourceFiles, Uri entryUri)
+        {
+            var compiler = services.WithFileResolver(fileResolver).WithFileSystem(fileResolver.MockFileSystem).Build().GetCompiler();
+            var sourceFileDict = sourceFiles
+                .Where(x => PathHelper.HasBicepExtension(x) || PathHelper.HasArmTemplateLikeExtension(x))
+                .ToDictionary(x => x, x => fileResolver.TryRead(x).IsSuccess(out var fileContents) ? fileContents : throw new InvalidOperationException($"Failed to find file {x}"));
+
+            var compilation = compiler.CreateCompilationWithoutRestore(entryUri);
+            return GetCompilationResult(compilation);
+        }
+
+        public static CompilationResult Compile(IResourceTypeLoader resourceTypeLoader, params (string fileName, string fileContents)[] files)
+            => Compile(new ServiceBuilder().WithFeatureOverrides(BicepTestConstants.FeatureOverrides).WithAzResourceTypeLoader(resourceTypeLoader), files);
+
+        public static CompilationResult Compile(params InputFile[] files)
+            => Compile(files.Select(x => (x.FileName, x.Contents)).ToArray());
 
         public static CompilationResult Compile(params (string fileName, string fileContents)[] files)
-            => Compile(new CompilationHelperContext(), files);
+            => Compile(new ServiceBuilder().WithFeatureOverrides(BicepTestConstants.FeatureOverrides), files);
 
         public static CompilationResult Compile(string fileContents)
             => Compile(("main.bicep", fileContents));
 
-        public static CompilationResult Compile(CompilationHelperContext context, string fileContents)
-            => Compile(context, ("main.bicep", fileContents));
+        public static CompilationResult Compile(ServiceBuilder services, string fileContents)
+            => Compile(services, ("main.bicep", fileContents));
 
-        private static (IReadOnlyDictionary<Uri, string> files, Uri entryFileUri) CreateFileDictionary(IEnumerable<(string fileName, string fileContents)> files)
+        public static ParamsCompilationResult CompileParams(params (string fileName, string fileContents)[] files)
         {
-            var uriDictionary = files.ToDictionary(
-                x => new Uri($"file:///path/to/{x.fileName}"),
+            return CompileParams(new ServiceBuilder(), files);
+        }
+
+        public static ParamsCompilationResult CompileParams(ServiceBuilder services, params (string fileName, string fileContents)[] files)
+        {
+            files.Select(x => x.fileName).Should().Contain("parameters.bicepparam");
+
+            var (uriDictionary, entryUri) = CreateFileDictionary(files.Select(file => ("/path/to", file.fileName, file.fileContents)).ToArray(), "parameters.bicepparam");
+
+            var sourceFiles = uriDictionary
+                .Where(x => PathHelper.HasBicepparamsExtension(x.Key) || PathHelper.HasBicepExtension(x.Key) || PathHelper.HasArmTemplateLikeExtension(x.Key))
+                .ToDictionary(x => x.Key, x => x.Value);
+
+            var compilation = services
+                .WithMockFileSystem(uriDictionary)
+                .BuildCompilation(sourceFiles, entryUri);
+
+            return CompileParams(compilation);
+        }
+
+        public static (IReadOnlyDictionary<Uri, TContents> files, Uri entryFileUri) CreateFileDictionary<TContents>(IEnumerable<(string filePath, string fileName, TContents fileContents)> files, string entryFileName)
+        {
+            var filesArray = files.ToArray();
+            var (entryFilePath, _, _) = filesArray.Where(x => x.fileName == entryFileName).First();
+            var uriDictionary = filesArray.ToDictionary(
+                x => InMemoryFileResolver.GetFileUri($"{x.filePath}/{x.fileName}"),
                 x => x.fileContents);
-            var entryUri = new Uri($"file:///path/to/main.bicep");
+            var entryUri = InMemoryFileResolver.GetFileUri($"{entryFilePath}/{entryFileName}");
             return (uriDictionary, entryUri);
         }
 
-        private static CompilationResult Compile(CompilationHelperContext context, Compilation compilation)
+        public static CompilationResult GetCompilationResult(Compilation compilation)
         {
-            var emitter = new TemplateEmitter(compilation.GetEntrypointSemanticModel(), context.GetEmitterSettings());
+            SemanticModel semanticModel = compilation.GetEntrypointSemanticModel();
+            var emitter = new TemplateEmitter(semanticModel);
 
-            var diagnostics = compilation.GetEntrypointSemanticModel().GetAllDiagnostics();
+            var diagnostics = semanticModel.GetAllDiagnostics();
 
             JToken? template = null;
-            if (!compilation.GetEntrypointSemanticModel().HasErrors())
+            if (!semanticModel.HasErrors())
             {
                 using var stream = new MemoryStream();
                 var emitResult = emitter.Emit(stream);
@@ -108,6 +212,31 @@ namespace Bicep.Core.UnitTests.Utils
             }
 
             return new(template, diagnostics, compilation);
+        }
+
+        private static ParamsCompilationResult CompileParams(Compilation compilation)
+        {
+            var semanticModel = compilation.GetEntrypointSemanticModel();
+            var emitter = new ParametersEmitter(semanticModel);
+
+            var diagnostics = semanticModel.GetAllDiagnostics();
+
+            JToken? parameters = null;
+            if (!semanticModel.HasErrors())
+            {
+                using var stream = new MemoryStream();
+                var emitResult = emitter.Emit(stream);
+
+                if (emitResult.Status != EmitStatus.Failed)
+                {
+                    stream.Position = 0;
+                    var jsonOutput = new StreamReader(stream).ReadToEnd();
+
+                    parameters = JToken.Parse(jsonOutput);
+                }
+            }
+
+            return new(parameters, diagnostics, compilation);
         }
     }
 }

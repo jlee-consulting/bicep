@@ -1,20 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.Core.CodeAction;
-using Bicep.Core.Diagnostics;
-using Bicep.Core.Navigation;
-using Bicep.Core.Parsing;
-using Bicep.Core.Semantics;
-using Bicep.Core.Semantics.Namespaces;
-using Bicep.Core.Syntax;
-using Bicep.Core.TypeSystem;
-using Bicep.Core.Workspaces;
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Linq;
+using Bicep.Core.Diagnostics;
+using Bicep.Core.Semantics;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.Syntax;
 
 namespace Bicep.Core.Analyzers.Linter.Rules
 {
@@ -33,31 +24,34 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         public override string FormatMessage(params object[] values)
             => string.Format((string)values[0]);
 
-        public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
+        public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
         {
-            Visitor visitor = new(this, model);
+            Visitor visitor = new(this, model, diagnosticLevel);
             visitor.Visit(model.SourceFile.ProgramSyntax);
             return visitor.diagnostics;
         }
 
-        private sealed class Visitor : SyntaxVisitor
+        private sealed class Visitor : AstVisitor
         {
             public List<IDiagnostic> diagnostics = new();
 
+            private readonly Dictionary<ISourceFile, ImmutableArray<ParameterSymbol>> _cachedParamsUsedInLocationPropsForFile = new();
             private readonly ExplicitValuesForLocationParamsRule parent;
             private readonly SemanticModel model;
+            private readonly DiagnosticLevel diagnosticLevel;
 
-            public Visitor(ExplicitValuesForLocationParamsRule parent, SemanticModel model)
+            public Visitor(ExplicitValuesForLocationParamsRule parent, SemanticModel model, DiagnosticLevel diagnosticLevel)
             {
                 this.parent = parent;
                 this.model = model;
+                this.diagnosticLevel = diagnosticLevel;
             }
 
             public override void VisitModuleDeclarationSyntax(ModuleDeclarationSyntax moduleDeclarationSyntax)
             {
-                // Check that explicit values passed in to any location-related parameters in a consumed module
+                // Check that explicit values are passed in to any location-related parameters in a consumed module
                 ImmutableArray<(string parameterName, SyntaxBase? actualValue)> locationParametersActualValues =
-                    parent.GetParameterValuesForModuleLocationParameters(moduleDeclarationSyntax, model, onlyParamsWithDefaultValues: true);
+                    parent.GetParameterValuesForModuleLocationParameters(_cachedParamsUsedInLocationPropsForFile, moduleDeclarationSyntax, model, onlyParamsWithDefaultValues: true);
 
                 // Show the error on the params key if it exists, otherwise on the module name
                 var moduleParamsPropertyObject = moduleDeclarationSyntax.TryGetBody()?
@@ -71,7 +65,8 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                         // No value being passed in - this is a failure
                         string moduleName = moduleDeclarationSyntax.Name.IdentifierName;
                         diagnostics.Add(
-                            parent.CreateDiagnosticForSpan(errorSpan,
+                            parent.CreateDiagnosticForSpan(diagnosticLevel,
+                                errorSpan,
                                 String.Format(
                                     CoreResources.NoHardcodedLocation_ModuleLocationNeedsExplicitValue,
                                     parameterName,

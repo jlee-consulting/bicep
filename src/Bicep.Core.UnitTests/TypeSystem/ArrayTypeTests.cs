@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -20,15 +21,15 @@ namespace Bicep.Core.UnitTests.TypeSystem
         [TestMethod]
         public void ArraysOfCompoundTypesShouldHaveExpectedDisplayString()
         {
-            Create(TypeHelper.CreateTypeUnion(new StringLiteralType("one"), new StringLiteralType("two"))).Name.Should().Be("('one' | 'two')[]");
+            Create(TypeHelper.CreateTypeUnion(TypeFactory.CreateStringLiteralType("one"), TypeFactory.CreateStringLiteralType("two"))).Name.Should().Be("('one' | 'two')[]");
 
-            Create(TypeHelper.CreateTypeUnion(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup), new StringLiteralType("test"))).Name
+            Create(TypeHelper.CreateTypeUnion(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup), TypeFactory.CreateStringLiteralType("test"))).Name
                 .Should().Be("('test' | managementGroup)[]");
 
-            Create(TypeHelper.CreateTypeUnion(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup | ResourceScope.Tenant), new StringLiteralType("test"))).Name
+            Create(TypeHelper.CreateTypeUnion(LanguageConstants.CreateResourceScopeReference(ResourceScope.ManagementGroup | ResourceScope.Tenant), TypeFactory.CreateStringLiteralType("test"))).Name
                 .Should().Be("('test' | (tenant | managementGroup))[]");
         }
 
-        private static TypedArrayType Create(TypeSymbol itemType) => new TypedArrayType(itemType, TypeSymbolValidationFlags.Default);
+        private static TypedArrayType Create(TypeSymbol itemType) => new(itemType, TypeSymbolValidationFlags.Default);
     }
 }

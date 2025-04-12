@@ -5,7 +5,7 @@ import * as tm from "tmlanguage-generator";
 import path from "path";
 import plist from "plist";
 
-export const grammarPath = path.resolve(__dirname, '../bicep.tmlanguage');
+export const grammarPath = path.resolve(__dirname, "../bicep.tmlanguage");
 
 type Rule = tm.Rule<BicepScope>;
 type IncludeRule = tm.IncludeRule<BicepScope>;
@@ -39,29 +39,38 @@ const meta: typeof tm.meta = tm.meta;
 const identifierStart = "[_$[:alpha:]]";
 const identifierContinue = "[_$[:alnum:]]";
 const identifier = bounded(`${identifierStart}${identifierContinue}*`);
+const directive = bounded(`[_a-zA-Z-0-9]+`);
 
 // whitespace. ideally we'd tokenize in-line block comments, but that's a lot of work. For now, ignore them.
 const ws = `(?:[ \\t\\r\\n]|\\/\\*(?:\\*(?!\\/)|[^*])*\\*\\/)*`;
 
 const keywords = [
-  'targetScope',
-  'resource',
-  'module',
-  'param',
-  'var',
-  'output',
-  'for',
-  'in',
-  'if',
-  'existing',
-  'import',
-  'from',
+  "metadata",
+  "targetScope",
+  "resource",
+  "module",
+  "param",
+  "var",
+  "output",
+  "for",
+  "in",
+  "if",
+  "existing",
+  "import",
+  "as",
+  "type",
+  "with",
+  "using",
+  "extends",
+  "func",
+  "assert",
+  "extension",
 ];
 
 const keywordExpression: MatchRule = {
-  key: 'keyword',
-  scope: 'keyword.control.declaration.bicep',
-  match: bounded(`(${keywords.join('|')})`),
+  key: "keyword",
+  scope: "keyword.control.declaration.bicep",
+  match: bounded(`(${keywords.join("|")})`),
 };
 
 const lineComment: MatchRule = {
@@ -78,7 +87,7 @@ const blockComment: BeginEndRule = {
 };
 
 const comments: IncludeRule = {
-  key: 'comments',
+  key: "comments",
   patterns: [lineComment, blockComment],
 };
 
@@ -103,9 +112,9 @@ const stringVerbatim: BeginEndRule = {
   key: "string-verbatim",
   scope: "string.quoted.multi.bicep",
   begin: `'''`,
-  end: `'''`,
+  end: `'''${notBefore(`'`)}`,
   patterns: [],
-}
+};
 
 const stringSubstitution: BeginEndRule = {
   key: "string-literal-subst",
@@ -126,10 +135,7 @@ const stringLiteral: BeginEndRule = {
   scope: "string.quoted.single.bicep",
   begin: `'${notBefore(`''`)}`,
   end: `'`,
-  patterns: [
-    escapeChar,
-    stringSubstitution
-  ],
+  patterns: [escapeChar, stringSubstitution],
 };
 
 const numericLiteral: MatchRule = {
@@ -150,42 +156,19 @@ const identifierExpression: MatchRule = {
   match: `${identifier}${notBefore(`${ws}\\(`)}`,
 };
 
-const objectPropertyKeyIdentifier: MatchRule = {
-  key: "object-property-key-identifier",
-  scope: meta,
-  match: `(${identifier})`,
-  captures: {
-    "1": { scope: "variable.other.property.bicep" },
-  }
-};
-
-const objectProperty: BeginEndRule = {
-  key: "object-property",
-  scope: meta,
-  begin: `${after(`^`)}${notBefore(`${ws}}`)}`,
-  end: before(`$`),
-  patterns: withComments([
-    objectPropertyKeyIdentifier,
-    stringLiteral,
-    {
-      key: "object-property-end",
-      scope: meta,
-      begin: `:(${ws})`, // wanted to use after(`:${ws}`)
-      beginCaptures: {
-        "1": comments
-      },
-      end: before(`${ws}$`),
-      patterns: withComments([expression]),
-    },
-  ]),
-};
-
 const objectLiteral: BeginEndRule = {
   key: "object-literal",
   scope: meta,
   begin: `{`,
   end: `}`,
-  patterns: withComments([objectProperty]),
+  patterns: withComments([
+    {
+      key: "object-property-key",
+      scope: "variable.other.property.bicep",
+      match: `${identifier}${before(`${ws}:`)}`,
+    },
+    expression,
+  ]),
 };
 
 const arrayLiteral: BeginEndRule = {
@@ -215,6 +198,40 @@ const decorator: BeginEndRule = {
   patterns: withComments([expression]),
 };
 
+const lambdaStart =
+  `(` +
+  `\\(${ws}${identifier}${ws}(,${ws}${identifier}${ws})*\\)|` +
+  `\\(${ws}\\)|` +
+  `${ws}${identifier}${ws}` +
+  `)${before(`${ws}=>`)}`;
+
+const lambda: BeginEndRule = {
+  key: "lambda-start",
+  scope: meta,
+  begin: lambdaStart,
+  beginCaptures: {
+    "1": {
+      scope: meta,
+      patterns: withComments([identifierExpression]),
+    },
+  },
+  end: `${ws}=>`,
+};
+
+const directiveStatement: BeginEndRule = {
+  key: "directive",
+  scope: meta,
+  begin: `#${directive}`,
+  end: `$`,
+  patterns: withComments([
+    {
+      key: "directive-variable",
+      scope: "keyword.control.declaration.bicep",
+      match: directive,
+    },
+  ]),
+};
+
 expression.patterns = [
   stringLiteral,
   stringVerbatim,
@@ -226,18 +243,20 @@ expression.patterns = [
   identifierExpression,
   functionCall,
   decorator,
+  lambda,
+  directiveStatement,
 ];
 
 const grammar: Grammar = {
   $schema: tm.schema,
   name: "Bicep",
   scopeName: "source.bicep",
-  fileTypes: [".bicep"],
+  fileTypes: [".bicep", ".bicepparam"],
   patterns: withComments([expression]),
 };
 
 export async function generateGrammar(): Promise<string> {
   const json = await tm.emitJSON(grammar);
-  
+
   return plist.build(JSON.parse(json));
 }

@@ -1,23 +1,20 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
-using Bicep.Core.Parsing;
 using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.Syntax;
 using Bicep.Core.Text;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Semantics
 {
     public static class SymbolValidator
     {
         private delegate IEnumerable<string> GetNameSuggestions();
-        private delegate ErrorDiagnostic GetMissingNameError(DiagnosticBuilder.DiagnosticBuilderInternal builder, string? suggestedName);
+        private delegate Diagnostic GetMissingNameError(DiagnosticBuilder.DiagnosticBuilderInternal builder, string? suggestedName);
 
         public static Symbol ResolveNamespaceQualifiedFunction(FunctionFlags allowedFlags, Symbol? foundSymbol, IdentifierSyntax identifierSyntax, NamespaceType namespaceType)
             => ResolveSymbolInternal(
@@ -72,7 +69,7 @@ namespace Bicep.Core.Semantics
                     _ => builder.SymbolicNameDoesNotExistWithSuggestion(identifierSyntax.IdentifierName, suggestedName),
                 });
 
-        public static Symbol ResolveUnqualifiedSymbol(Symbol? foundSymbol, IdentifierSyntax identifierSyntax, NamespaceResolver namespaceResolver, IEnumerable<string> declarations)
+        public static Symbol ResolveUnqualifiedSymbol(Symbol? foundSymbol, IdentifierSyntax identifierSyntax, NamespaceResolver namespaceResolver)
             => ResolveSymbolInternal(
                 FunctionFlags.Default,
                 foundSymbol,
@@ -130,6 +127,11 @@ namespace Bicep.Core.Semantics
                 return new ErrorSymbol(DiagnosticBuilder.ForPosition(span).CannotUseFunctionAsParameterDecorator(functionSymbol.Name));
             }
 
+            if (!functionFlags.HasFlag(FunctionFlags.TypeDecorator) && allowedFlags.HasFlag(FunctionFlags.TypeDecorator))
+            {
+                return new ErrorSymbol(DiagnosticBuilder.ForPosition(span).CannotUseFunctionAsTypeDecorator(functionSymbol.Name));
+            }
+
             if (!functionFlags.HasFlag(FunctionFlags.VariableDecorator) && allowedFlags.HasFlag(FunctionFlags.VariableDecorator))
             {
                 return new ErrorSymbol(DiagnosticBuilder.ForPosition(span).CannotUseFunctionAsVariableDecorator(functionSymbol.Name));
@@ -148,6 +150,11 @@ namespace Bicep.Core.Semantics
             if (!functionFlags.HasFlag(FunctionFlags.OutputDecorator) && allowedFlags.HasFlag(FunctionFlags.OutputDecorator))
             {
                 return new ErrorSymbol(DiagnosticBuilder.ForPosition(span).CannotUseFunctionAsOutputDecorator(functionSymbol.Name));
+            }
+
+            if (!functionFlags.HasFlag(FunctionFlags.MetadataDecorator) && allowedFlags.HasFlag(FunctionFlags.MetadataDecorator))
+            {
+                return new ErrorSymbol(DiagnosticBuilder.ForPosition(span).CannotUseFunctionAsMetadataDecorator(functionSymbol.Name));
             }
 
             return functionSymbol;

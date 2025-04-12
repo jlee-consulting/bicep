@@ -6,9 +6,15 @@ using Bicep.Core.Syntax;
 
 namespace Bicep.LanguageServer.CompilationManager
 {
-    public class CompilationContext
+    /// <summary>
+    /// Represents a compilation context that successfully produced a compilation
+    /// (the compilation itself may have errors or warnings in the semantic model)
+    /// </summary>
+    public class CompilationContext : CompilationContextBase
     {
         public CompilationContext(Compilation compilation)
+            // on a successful compilation, we can reuse the entry point file kind
+            : base(compilation.SourceFileGrouping.EntryPoint.FileKind)
         {
             this.Compilation = compilation;
         }

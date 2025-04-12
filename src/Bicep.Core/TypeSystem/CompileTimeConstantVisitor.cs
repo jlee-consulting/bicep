@@ -8,7 +8,7 @@ namespace Bicep.Core.TypeSystem
     /// <summary>
     /// Visitor used to collect errors caused by expression assignment to a compile-time constant property.
     /// </summary>
-    public sealed class CompileTimeConstantVisitor : SyntaxVisitor
+    public sealed class CompileTimeConstantVisitor : AstVisitor
     {
         private readonly IDiagnosticWriter diagnosticWriter;
 
@@ -58,6 +58,15 @@ namespace Bicep.Core.TypeSystem
         public override void VisitPropertyAccessSyntax(PropertyAccessSyntax syntax)
         {
             this.AppendError(syntax);
+        }
+
+        public override void VisitStringSyntax(StringSyntax syntax)
+        {
+            // Flag string interpolation since we don't support constant folding and constant propagation.
+            if (syntax.IsInterpolated())
+            {
+                this.AppendError(syntax);
+            }
         }
 
         public override void VisitTernaryOperationSyntax(TernaryOperationSyntax syntax)

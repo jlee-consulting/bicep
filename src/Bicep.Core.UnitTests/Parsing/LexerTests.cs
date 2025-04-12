@@ -1,12 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
 using System.Collections.Immutable;
-using System.Linq;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Parsing;
 using Bicep.Core.Syntax;
+using Bicep.Core.Text;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -32,7 +31,7 @@ namespace Bicep.Core.UnitTests.Parsing
         [DataRow(@"'\u{D801}\u{DC37}'", "\uD801\uDC37")]
         public void TryGetStringValue_ValidStringLiteralToken_ShouldCalculateValueCorrectly(string literalText, string expectedValue)
         {
-            var token = new Token(TokenType.StringComplete, new TextSpan(0, literalText.Length), literalText, Enumerable.Empty<SyntaxTrivia>(), Enumerable.Empty<SyntaxTrivia>());
+            var token = new FreeformToken(TokenType.StringComplete, new TextSpan(0, literalText.Length), literalText, [], []);
 
             var actual = Lexer.TryGetStringValue(token);
 
@@ -42,7 +41,7 @@ namespace Bicep.Core.UnitTests.Parsing
         [TestMethod]
         public void TryGetStringValue_WrongTokenType_ShouldReturnNull()
         {
-            var token = new Token(TokenType.Integer, new TextSpan(0, 2), "12", Enumerable.Empty<SyntaxTrivia>(), Enumerable.Empty<SyntaxTrivia>());
+            var token = new FreeformToken(TokenType.Integer, new TextSpan(0, 2), "12", [], []);
 
             Lexer.TryGetStringValue(token).Should().BeNull();
         }
@@ -70,7 +69,7 @@ namespace Bicep.Core.UnitTests.Parsing
         [DataRow(@"'prefix\u{FFFFFFFFsufffix'")]
         public void GetStringValue_InvalidStringLiteralToken_ShouldReturnNull(string literalText)
         {
-            var token = new Token(TokenType.StringComplete, new TextSpan(0, literalText.Length), literalText, Enumerable.Empty<SyntaxTrivia>(), Enumerable.Empty<SyntaxTrivia>());
+            var token = new FreeformToken(TokenType.StringComplete, new TextSpan(0, literalText.Length), literalText, [], []);
 
             Lexer.TryGetStringValue(token).Should().BeNull();
         }
@@ -78,7 +77,7 @@ namespace Bicep.Core.UnitTests.Parsing
         [TestMethod]
         public void UnrecognizedTokens_ShouldNotBeRecognized()
         {
-            RunSingleTokenTest("^", TokenType.Unrecognized, "The following token is not recognized: \"^\".", "BCP001");
+            RunSingleTokenTest("~", TokenType.Unrecognized, "The following token is not recognized: \"~\".", "BCP001");
         }
 
         [TestMethod]
@@ -124,7 +123,7 @@ namespace Bicep.Core.UnitTests.Parsing
         public void DisableNextLineDiagnosticsDirectiveWithInvalidTrailingCharacter_ShouldLexCorrectly()
         {
             var diagnosticWriter = ToListDiagnosticWriter.Create();
-            var lexer = new Lexer(new SlidingTextWindow("#disable-next-line BCP037|"), diagnosticWriter);
+            var lexer = new Lexer(new SlidingTextWindow("#disable-next-line BCP037~"), diagnosticWriter);
             lexer.Lex();
 
             var diagnostics = diagnosticWriter.GetDiagnostics();
@@ -134,7 +133,7 @@ namespace Bicep.Core.UnitTests.Parsing
                 {
                     x.Level.Should().Be(DiagnosticLevel.Error);
                     x.Code.Should().Be("BCP001");
-                    x.Message.Should().Be("The following token is not recognized: \"|\".");
+                    x.Message.Should().Be("The following token is not recognized: \"~\".");
                 });
 
             var tokens = lexer.GetTokens();

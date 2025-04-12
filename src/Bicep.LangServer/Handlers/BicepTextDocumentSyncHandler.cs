@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Bicep.Core;
+using Bicep.Core.FileSystem;
 using Bicep.LanguageServer.CompilationManager;
 using Bicep.LanguageServer.Configuration;
 using Bicep.LanguageServer.Utils;
@@ -20,15 +18,27 @@ namespace Bicep.LanguageServer.Handlers
     {
         private readonly ICompilationManager compilationManager;
         private readonly IBicepConfigChangeHandler bicepConfigChangeHandler;
+        private readonly DocumentSelectorFactory documentSelectorFactory;
 
-        public BicepTextDocumentSyncHandler(ICompilationManager compilationManager, IBicepConfigChangeHandler bicepConfigChangeHandler)
+        public BicepTextDocumentSyncHandler(ICompilationManager compilationManager, IBicepConfigChangeHandler bicepConfigChangeHandler, DocumentSelectorFactory documentSelectorFactory)
         {
             this.bicepConfigChangeHandler = bicepConfigChangeHandler;
             this.compilationManager = compilationManager;
+            this.documentSelectorFactory = documentSelectorFactory;
         }
 
         public override TextDocumentAttributes GetTextDocumentAttributes(DocumentUri uri)
         {
+            if (ConfigurationHelper.IsBicepConfigFile(uri))
+            {
+                return new TextDocumentAttributes(uri, LanguageConstants.JsoncLanguageId);
+            }
+
+            if (PathHelper.HasBicepparamsExtension(uri.ToUriEncoded()))
+            {
+                return new TextDocumentAttributes(uri, LanguageConstants.ParamsLanguageId);
+            }
+
             return new TextDocumentAttributes(uri, LanguageConstants.LanguageId);
         }
 
@@ -39,15 +49,13 @@ namespace Bicep.LanguageServer.Handlers
 
             var documentUri = request.TextDocument.Uri;
 
-            this.compilationManager.UpsertCompilation(documentUri, request.TextDocument.Version, contents);
-
-            // Handle scenario where the bicepconfig.json file was opened prior to
-            // language service activation. If the config file was opened before the language server
-            // activation, there won't be an entry for it in the cache. We'll capture the state of the
-            // config file on disk when it's changed and cache it.
             if (ConfigurationHelper.IsBicepConfigFile(documentUri))
             {
                 bicepConfigChangeHandler.HandleBicepConfigChangeEvent(documentUri);
+            }
+            else
+            {
+                this.compilationManager.UpdateCompilation(documentUri, request.TextDocument.Version, contents);
             }
 
             return Unit.Task;
@@ -58,12 +66,14 @@ namespace Bicep.LanguageServer.Handlers
             var documentUri = request.TextDocument.Uri;
 
             // If the documentUri corresponds to bicepconfig.json, we'll add an entry to activeBicepConfigCache.
-            if (ConfigurationHelper.IsBicepConfigFile(documentUri))
+            if (ConfigurationHelper.IsBicepConfigFile(documentUri)) //potentially copy this for bicep params
             {
                 bicepConfigChangeHandler.HandleBicepConfigOpenEvent(documentUri);
             }
-
-            this.compilationManager.UpsertCompilation(documentUri, request.TextDocument.Version, request.TextDocument.Text, request.TextDocument.LanguageId);
+            else
+            {
+                this.compilationManager.OpenCompilation(documentUri, request.TextDocument.Version, request.TextDocument.Text, request.TextDocument.LanguageId);
+            }
 
             return Unit.Task;
         }
@@ -72,10 +82,6 @@ namespace Bicep.LanguageServer.Handlers
         {
             var documentUri = request.TextDocument.Uri;
 
-            // If the documentUri corresponds to bicepconfig.json and there's an entry in activeBicepConfigCache,
-            // we'll use the last known configuration and the one from currently saved config file to figure out
-            // if we need to send out telemetry information regarding the config change.
-            // We'll also update the entry in activeBicepConfigCache.
             if (ConfigurationHelper.IsBicepConfigFile(documentUri))
             {
                 bicepConfigChangeHandler.HandleBicepConfigSaveEvent(documentUri);
@@ -93,15 +99,18 @@ namespace Bicep.LanguageServer.Handlers
             {
                 bicepConfigChangeHandler.HandleBicepConfigCloseEvent(documentUri);
             }
+            else
+            {
+                this.compilationManager.CloseCompilation(request.TextDocument.Uri);
+            }
 
-            this.compilationManager.CloseCompilation(request.TextDocument.Uri);
             return Unit.Task;
         }
 
-        protected override TextDocumentSyncRegistrationOptions CreateRegistrationOptions(SynchronizationCapability capability, ClientCapabilities clientCapabilities) => new()
+        protected override TextDocumentSyncRegistrationOptions CreateRegistrationOptions(TextSynchronizationCapability capability, ClientCapabilities clientCapabilities) => new()
         {
             Change = TextDocumentSyncKind.Full,
-            DocumentSelector = DocumentSelectorFactory.CreateForTextDocumentSync()
+            DocumentSelector = documentSelectorFactory.CreateForAllSupportedLangIds()
         };
     }
 }

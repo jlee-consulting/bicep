@@ -1,17 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
 using Azure.Deployments.Core.Uri;
 using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
+using Bicep.Core.Registry;
+using Bicep.Core.SourceGraph;
 
 namespace Bicep.Core.Modules
 {
-    public class TemplateSpecModuleReference : ModuleReference
+    public class TemplateSpecModuleReference : ArtifactReference
     {
         private const int ResourceNameMaximumLength = 90;
 
@@ -21,8 +20,8 @@ namespace Bicep.Core.Modules
 
         private static readonly Regex ResourceNameRegex = new(@"^[-\w\.\(\)]{0,89}[-\w\(\)]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-        private TemplateSpecModuleReference(string subscriptionId, string resourceGroupName, string templateSpecName, string version)
-            : base(ModuleReferenceSchemes.TemplateSpecs)
+        private TemplateSpecModuleReference(BicepSourceFile referencingFile, string subscriptionId, string resourceGroupName, string templateSpecName, string version)
+            : base(referencingFile, ArtifactReferenceSchemes.TemplateSpecs)
         {
             this.SubscriptionId = subscriptionId;
             this.ResourceGroupName = resourceGroupName;
@@ -63,13 +62,13 @@ namespace Bicep.Core.Modules
             return hash.ToHashCode();
         }
 
-        public static TemplateSpecModuleReference? TryParse(string? aliasName, string referenceValue, RootConfiguration configuration, out DiagnosticBuilder.ErrorBuilderDelegate? errorBuilder)
+        public static ResultWithDiagnosticBuilder<TemplateSpecModuleReference> TryParse(BicepSourceFile referencingFile, string? aliasName, string referenceValue)
         {
             if (aliasName is not null)
             {
-                if (configuration.ModuleAliases.TryGetTemplateSpecModuleAlias(aliasName, out errorBuilder) is not { } alias)
+                if (!referencingFile.Configuration.ModuleAliases.TryGetTemplateSpecModuleAlias(aliasName).IsSuccess(out var alias, out var errorBuilder))
                 {
-                    return null;
+                    return new(errorBuilder);
                 }
 
                 referenceValue = $"{alias}/{referenceValue}";
@@ -77,8 +76,7 @@ namespace Bicep.Core.Modules
 
             if (TemplateSpecUriTemplate.GetTemplateMatch(referenceValue) is not { } match)
             {
-                errorBuilder = x => x.InvalidTemplateSpecReference(aliasName, FullyQualify(referenceValue));
-                return null;
+                return new(x => x.InvalidTemplateSpecReference(aliasName, FullyQualify(referenceValue)));
             }
 
             string subscriptionId = GetBoundVariable(match, nameof(subscriptionId));
@@ -89,55 +87,47 @@ namespace Bicep.Core.Modules
             // Validate subscription ID.
             if (!Guid.TryParse(subscriptionId, out _))
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceInvalidSubscirptionId(aliasName, subscriptionId, FullyQualify(referenceValue));
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceInvalidSubscriptionId(aliasName, subscriptionId, FullyQualify(referenceValue)));
             }
 
             // Validate resource group name.
             if (resourceGroupName.Length > ResourceNameMaximumLength)
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceResourceGroupNameTooLong(aliasName, resourceGroupName, FullyQualify(referenceValue), ResourceNameMaximumLength);
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceResourceGroupNameTooLong(aliasName, resourceGroupName, FullyQualify(referenceValue), ResourceNameMaximumLength));
             }
 
             if (resourceGroupName.Length == 0 ||
                 resourceGroupName[^1] == '.' ||
                 resourceGroupName.Where(c => !char.IsLetterOrDigit(c) && !ResourceGroupNameAllowedCharacterSet.Contains(c)).Any())
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceInvalidResourceGroupName(aliasName, resourceGroupName, FullyQualify(referenceValue));
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceInvalidResourceGroupName(aliasName, resourceGroupName, FullyQualify(referenceValue)));
             }
 
             // Validate template spec name.
             if (templateSpecName.Length > ResourceNameMaximumLength)
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceTemplateSpecNameTooLong(aliasName, templateSpecName, FullyQualify(referenceValue), ResourceNameMaximumLength);
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceTemplateSpecNameTooLong(aliasName, templateSpecName, FullyQualify(referenceValue), ResourceNameMaximumLength));
             }
 
             if (!ResourceNameRegex.IsMatch(templateSpecName))
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceInvalidTemplateSpecName(aliasName, templateSpecName, FullyQualify(referenceValue));
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceInvalidTemplateSpecName(aliasName, templateSpecName, FullyQualify(referenceValue)));
             }
 
             // Validate template spec version.
             if (version.Length > ResourceNameMaximumLength)
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceTemplateSpecVersionTooLong(aliasName, version, FullyQualify(referenceValue), ResourceNameMaximumLength);
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceTemplateSpecVersionTooLong(aliasName, version, FullyQualify(referenceValue), ResourceNameMaximumLength));
             }
 
             if (!ResourceNameRegex.IsMatch(version))
             {
-                errorBuilder = x => x.InvalidTemplateSpecReferenceInvalidTemplateSpecVersion(aliasName, version, FullyQualify(referenceValue));
-                return null;
+                return new(x => x.InvalidTemplateSpecReferenceInvalidTemplateSpecVersion(aliasName, version, FullyQualify(referenceValue)));
             }
 
-            errorBuilder = null;
-            return new(subscriptionId, resourceGroupName, templateSpecName, version);
+            return new(new TemplateSpecModuleReference(referencingFile, subscriptionId, resourceGroupName, templateSpecName, version));
         }
-        private static string FullyQualify(string referenceValue) => $"{ModuleReferenceSchemes.TemplateSpecs}:{referenceValue}";
+        private static string FullyQualify(string referenceValue) => $"{ArtifactReferenceSchemes.TemplateSpecs}:{referenceValue}";
 
         private static string GetBoundVariable(UriTemplateMatch match, string variableName) =>
             match.BoundVariables[variableName] ?? throw new InvalidOperationException($"Could not get bound variable \"{variableName}\".");

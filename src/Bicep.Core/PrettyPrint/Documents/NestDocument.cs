@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using System.Collections.Immutable;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -14,7 +13,7 @@ namespace Bicep.Core.PrettyPrint.Documents
         private readonly ImmutableArray<ILinkedDocument> successors;
 
         public NestDocument(int level)
-            : this(level, ImmutableArray<ILinkedDocument>.Empty)
+            : this(level, [])
         {
         }
 

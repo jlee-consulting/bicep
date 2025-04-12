@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
+using Bicep.Core.Text;
 
 namespace Bicep.Core.Parsing
 {
@@ -20,8 +20,7 @@ namespace Bicep.Core.Parsing
         /// <summary>
         /// Gets the span of the current window.
         /// </summary>
-        public TextSpan GetSpan()
-            => new TextSpan(position, offset);
+        public TextSpan GetSpan() => new(position, offset);
 
         /// <summary>
         /// Gets the span from n characters behind up to current position.
@@ -60,8 +59,8 @@ namespace Bicep.Core.Parsing
         /// </summary>
         public int GetAbsolutePosition() => position + offset;
 
-        public string GetText()
-            => text.Substring(position, offset);
+        public ReadOnlySpan<char> GetText()
+            => text.AsSpan(position, offset);
 
         private int position;
 
@@ -114,11 +113,11 @@ namespace Bicep.Core.Parsing
 
             if (indexOfPreviousNewLine < 0 || position == 0)
             {
-                return text.Substring(0, position);
+                return text[..position];
             }
 
-            var postionAfterNewLine = indexOfPreviousNewLine + 1;
-            return text.Substring(postionAfterNewLine, position - postionAfterNewLine);
+            var positionAfterNewLine = indexOfPreviousNewLine + 1;
+            return text[positionAfterNewLine..position];
         }
     }
 }

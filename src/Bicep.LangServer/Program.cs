@@ -1,15 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
+using System.Diagnostics;
 using System.IO.Pipes;
+using System.Net;
 using System.Net.Sockets;
 using System.Runtime;
-using System.Threading;
-using System.Threading.Tasks;
-using CommandLine;
 using Bicep.Core.Utils;
-using System.Net;
-using System.Diagnostics;
+using Bicep.LanguageServer.Options;
+using CommandLine;
 
 namespace Bicep.LanguageServer
 {
@@ -28,6 +26,9 @@ namespace Bicep.LanguageServer
 
             [Option("wait-for-debugger", Required = false, HelpText = "If set, wait for a dotnet debugger to be attached before starting the server")]
             public bool WaitForDebugger { get; set; }
+
+            [Option("vs-compatibility-mode", Required = false, HelpText = "If set, runs in a mode to better support Visual Studio as a host")]
+            public bool VsCompatibilityMode { get; set; }
         }
 
         public static async Task Main(string[] args)
@@ -37,12 +38,13 @@ namespace Bicep.LanguageServer
                 ProfileOptimization.SetProfileRoot(profilePath);
                 ProfileOptimization.StartProfile("bicepserver.profile");
 
-                var parser = new Parser(settings => {
+                var parser = new Parser(settings =>
+                {
                     settings.IgnoreUnknownArguments = true;
                 });
 
                 await parser.ParseArguments<CommandLineOptions>(args)
-                    .WithNotParsed((x) => Environment.Exit(1))
+                    .WithNotParsed((x) => System.Environment.Exit(1))
                     .WithParsedAsync(async options => await RunServer(options, cancellationToken));
             });
 
@@ -64,6 +66,9 @@ namespace Bicep.LanguageServer
             }
 
             Server server;
+
+            var bicepLangServerOptions = new BicepLangServerOptions() { VsCompatibilityMode = options.VsCompatibilityMode };
+
             if (options.Pipe is { } pipeName)
             {
                 if (pipeName.StartsWith(@"\\.\pipe\"))
@@ -77,10 +82,11 @@ namespace Bicep.LanguageServer
                 await clientPipe.ConnectAsync(cancellationToken);
 
                 server = new(
-                    new(),
+                    bicepLangServerOptions,
                     options => options
                         .WithInput(clientPipe)
-                        .WithOutput(clientPipe));
+                        .WithOutput(clientPipe)
+                        .RegisterForDisposal(clientPipe));
             }
             else if (options.Socket is { } port)
             {
@@ -90,7 +96,7 @@ namespace Bicep.LanguageServer
                 var tcpStream = tcpClient.GetStream();
 
                 server = new(
-                    new(),
+                    bicepLangServerOptions,
                     options => options
                         .WithInput(tcpStream)
                         .WithOutput(tcpStream)
@@ -99,7 +105,7 @@ namespace Bicep.LanguageServer
             else
             {
                 server = new(
-                    new(),
+                    bicepLangServerOptions,
                     options => options
                         .WithInput(Console.OpenStandardInput())
                         .WithOutput(Console.OpenStandardOutput()));

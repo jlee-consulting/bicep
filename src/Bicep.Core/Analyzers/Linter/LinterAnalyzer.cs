@@ -1,16 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
+using System.Diagnostics.CodeAnalysis;
 using Bicep.Core.Analyzers.Interfaces;
 using Bicep.Core.Configuration;
 using Bicep.Core.Diagnostics;
-using Bicep.Core.Parsing;
+using Bicep.Core.Registry.Catalog;
 using Bicep.Core.Semantics;
-using Microsoft.WindowsAzure.ResourceStack.Common.Extensions;
+using Bicep.Core.Text;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Bicep.Core.Analyzers.Linter
 {
@@ -22,52 +21,37 @@ namespace Bicep.Core.Analyzers.Linter
 
         public static string LinterVerboseSetting => $"{AnalyzerName}.verbose";
 
-        private readonly RootConfiguration configuration;
-
         private readonly LinterRulesProvider linterRulesProvider;
 
         private readonly ImmutableArray<IBicepAnalyzerRule> ruleSet;
 
-        private readonly ImmutableArray<IDiagnostic> ruleCreationErrors;
+        private readonly IServiceProvider serviceProvider;
 
-        // TODO: This should be controlled by a core component, not an analyzer
-        public const string LinterRuleInternalError = "linter-internal-error";
-
-        public LinterAnalyzer(RootConfiguration configuration)
+        public LinterAnalyzer(IServiceProvider serviceProvider)
         {
-            this.configuration = configuration;
             this.linterRulesProvider = new LinterRulesProvider();
-            (this.ruleSet, this.ruleCreationErrors) = CreateLinterRules();
+            this.ruleSet = CreateLinterRules();
+            this.serviceProvider = serviceProvider;
         }
 
-        private bool LinterEnabled => this.configuration.Analyzers.GetValue(LinterEnabledSetting, false); // defaults to true in base bicepconfig.json file
+        private bool LinterEnabled(SemanticModel model) => model.Configuration.Analyzers.GetValue(LinterEnabledSetting, false); // defaults to true in base bicepconfig.json file
 
-        private bool LinterVerbose => this.configuration.Analyzers.GetValue(LinterVerboseSetting, false);
+        private bool LinterVerbose(SemanticModel model) => model.Configuration.Analyzers.GetValue(LinterVerboseSetting, false);
 
-        private (ImmutableArray<IBicepAnalyzerRule> rules, ImmutableArray<IDiagnostic> errors) CreateLinterRules()
+
+        [UnconditionalSuppressMessage("Trimming", "IL2072:Target parameter argument does not satisfy 'DynamicallyAccessedMembersAttribute' in call to target method. The return value of the source method does not have matching annotations.", Justification = "List of types comes from a source generator.")]
+        private ImmutableArray<IBicepAnalyzerRule> CreateLinterRules()
         {
-            var errors = new List<IDiagnostic>();
             var rules = new List<IBicepAnalyzerRule>();
 
             var ruleTypes = linterRulesProvider.GetRuleTypes();
 
             foreach (var ruleType in ruleTypes)
             {
-                try
-                {
-                    rules.Add(Activator.CreateInstance(ruleType) as IBicepAnalyzerRule ?? throw new InvalidOperationException($"Failed to create an instance of \"{ruleType.Name}\"."));
-                }
-                catch (Exception ex)
-                {
-                    string message = string.Format("Analyzer '{0}' could not instantiate rule '{1}'. {2}",
-                        AnalyzerName,
-                        ruleType.Name,
-                        ex.InnerException?.Message ?? ex.Message);
-                    errors.Add(CreateInternalErrorDiagnostic(AnalyzerName, message));
-                }
+                rules.Add(Activator.CreateInstance(ruleType) as IBicepAnalyzerRule ?? throw new InvalidOperationException($"Failed to create an instance of \"{ruleType.Name}\"."));
             }
 
-            return (rules.ToImmutableArray(), errors.ToImmutableArray());
+            return [.. rules];
         }
 
         public IEnumerable<IBicepAnalyzerRule> GetRuleSet() => ruleSet;
@@ -76,58 +60,44 @@ namespace Bicep.Core.Analyzers.Linter
         {
             var diagnostics = new List<IDiagnostic>();
 
-            this.ruleSet.ForEach(r => r.Configure(this.configuration.Analyzers));
-
-            if (this.LinterEnabled)
+            if (this.LinterEnabled(semanticModel))
             {
-                // Add diaagnostics for rules that failed to load
-                diagnostics.AddRange(ruleCreationErrors);
-
                 // add an info diagnostic for local configuration reporting
-                if (this.LinterVerbose)
+                if (this.LinterVerbose(semanticModel))
                 {
-                    diagnostics.Add(GetConfigurationDiagnostic());
+                    diagnostics.Add(GetConfigurationDiagnostic(semanticModel));
                 }
 
-                diagnostics.AddRange(ruleSet
-                    .Where(rule => rule.IsEnabled())
-                    .SelectMany(r => r.Analyze(semanticModel)));
+                diagnostics.AddRange(ruleSet.SelectMany(r => r.Analyze(semanticModel, this.serviceProvider)));
             }
             else
             {
-                if (this.LinterVerbose)
+                if (this.LinterVerbose(semanticModel))
                 {
-                    diagnostics.Add(new AnalyzerDiagnostic(
-                        AnalyzerName,
-                        new TextSpan(0, 0),
+                    diagnostics.Add(new Diagnostic(
+                        TextSpan.TextDocumentStart,
                         DiagnosticLevel.Info,
+                        DiagnosticSource.CoreLinter,
                         "Linter Disabled",
-                        string.Format(CoreResources.LinterDisabledFormatMessage, this.configuration.ConfigurationPath ?? ConfigurationManager.BuiltInConfigurationResourceName)));
+                        string.Format(CoreResources.LinterDisabledFormatMessage, semanticModel.Configuration.ConfigFileUri?.ToString() ?? IConfigurationManager.BuiltInConfigurationResourceName)));
                 }
             }
 
             return diagnostics;
         }
 
-        private IDiagnostic GetConfigurationDiagnostic()
+        private IDiagnostic GetConfigurationDiagnostic(SemanticModel model)
         {
-            var configMessage = this.configuration.IsBuiltIn
+            var configMessage = model.Configuration.IsBuiltIn
                 ? CoreResources.BicepConfigNoCustomSettingsMessage
-                : string.Format(CoreResources.BicepConfigCustomSettingsFoundFormatMessage, this.configuration.ConfigurationPath);
+                : string.Format(CoreResources.BicepConfigCustomSettingsFoundFormatMessage, model.Configuration.ConfigFileUri?.ToString());
 
-            return new AnalyzerDiagnostic(
-                AnalyzerName,
-                new TextSpan(0, 0),
+            return new Diagnostic(
+                TextSpan.TextDocumentStart,
                 DiagnosticLevel.Info,
+                DiagnosticSource.CoreLinter,
                 "Bicep Linter Configuration",
                 configMessage);
         }
-
-        private static IDiagnostic CreateInternalErrorDiagnostic(string analyzerName, string message) => new AnalyzerDiagnostic(
-            analyzerName,
-            new TextSpan(0, 0),
-            DiagnosticLevel.Warning,
-            LinterAnalyzer.LinterRuleInternalError,
-            message);
     }
 }

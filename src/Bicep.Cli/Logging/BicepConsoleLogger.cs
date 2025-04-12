@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 using Microsoft.Extensions.Logging;
-using System;
 
 namespace Bicep.Cli.Logging
 {
@@ -71,16 +70,9 @@ namespace Bicep.Cli.Logging
             }
         }
 
-        public IDisposable BeginScope<TState>(TState state)
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
         {
-            return new NullDisposable();
-        }
-
-        private class NullDisposable : IDisposable
-        {
-            public void Dispose()
-            {
-            }
+            return null;
         }
     }
 }

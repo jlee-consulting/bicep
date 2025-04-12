@@ -7,7 +7,7 @@
             "request": "launch",
             "runtimeExecutable": "${execPath}",
             "args": [
-                "--enable-proposed-api",
+                "--enable-proposed-api=ms-azuretools.vscode-bicep",
                 "--extensionDevelopmentPath=${workspaceRoot}/src/vscode-bicep"
             ],
             "env": {
@@ -16,10 +16,9 @@
                 // Defaulting to "verbose" when debugging so that new telemetry IDs during development aren't accidentally sent and created before they're finalized
                 "DEBUGTELEMETRY": "v", // "" or "0" or "false": send telemetry as normal; "1": debug mode (no telemetry sent); "verbose": telemetry in console, don't send (from microsoft/vscode-azext-utils)
             },
-            "stopOnEntry": false,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/out/src/**/*.js"
+                "${workspaceRoot}/src/vscode-bicep/out/**/*.js"
             ],
             "preLaunchTask": "Build VSIX"
         },
@@ -28,13 +27,30 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "Build CLI",
-            "program": "${workspaceFolder}/src/Bicep.Cli/bin/Debug/net6.0/Bicep.dll",
+            "program": "${workspaceFolder}/src/Bicep.Cli/bin/Debug/net8.0/bicep",
             "args": [
                 "build",
                 "${file}"
             ],
+          "env": {
+            "BICEP_TRACING_ENABLED": "true"
+          },
+            "cwd": "${workspaceFolder}/src/Bicep.Cli",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "CLI-Test",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "Build CLI",
+            "program": "${workspaceFolder}/src/Bicep.Cli/bin/Debug/net8.0/bicep",
+            "args": [
+                "test",
+                "${file}"
+            ],
             "env": {
-                "BICEP_TRACING_ENABLED": "true"
+                "BICEP_TRACING_ENABLED": "true",
             },
             "cwd": "${workspaceFolder}/src/Bicep.Cli",
             "console": "internalConsole",
@@ -78,6 +94,23 @@
             "type": "coreclr",
             "request": "attach",
             "processId": "${command:pickProcess}"
-        }
+        },
+        {
+            "name": "PowerShell Launch Current File",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${file}",
+            "cwd": "${cwd}"
+        },
+        {
+            "name": "Deploy Pane Tests",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "test"
+            ],
+            "cwd": "${workspaceFolder}/src/vscode-bicep-ui/apps/deploy-pane"
+        },
     ]
 }

@@ -1,11 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.Core.Extensions;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Bicep.Core.Diagnostics;
+using Bicep.Core.Extensions;
+using Bicep.IO.Abstraction;
 using static Bicep.Core.Diagnostics.DiagnosticBuilder;
 
 namespace Bicep.Core.Configuration
@@ -39,75 +42,76 @@ namespace Bicep.Core.Configuration
             : $"{Registry}";
     }
 
-    public class ModuleAliasesConfiguration : ConfigurationSection<ModuleAliases>
+    public partial class ModuleAliasesConfiguration : ConfigurationSection<ModuleAliases>
     {
-        private static readonly Regex ModuleAliasNameRegex = new(@"^[a-zA-Z0-9-_]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private readonly IOUri? configFileUri;
 
-        private readonly string? configurationPath;
-
-        private ModuleAliasesConfiguration(ModuleAliases data, string? configurationPath)
+        private ModuleAliasesConfiguration(ModuleAliases data, IOUri? configFileUri)
             : base(data)
         {
-            this.configurationPath = configurationPath;
+            this.configFileUri = configFileUri;
         }
 
-        public static ModuleAliasesConfiguration Bind(JsonElement element, string? configurationPath) => new(element.ToNonNullObject<ModuleAliases>(), configurationPath);
+        public static ModuleAliasesConfiguration Bind(JsonElement element, IOUri? configFileUri) => new(element.ToNonNullObject<ModuleAliases>(), configFileUri);
 
-        public TemplateSpecModuleAlias? TryGetTemplateSpecModuleAlias(string aliasName, out ErrorBuilderDelegate? errorBuilder)
+        public ImmutableSortedDictionary<string, OciArtifactModuleAlias> GetOciArtifactModuleAliases()
         {
-            if (!ValidateAliasName(aliasName, out errorBuilder))
+            return this.Data.OciArtifactModuleAliases;
+        }
+
+        public ImmutableSortedDictionary<string, TemplateSpecModuleAlias> GetTemplateSpecModuleAliases()
+        {
+            return this.Data.TemplateSpecModuleAliases;
+        }
+
+        public ResultWithDiagnosticBuilder<TemplateSpecModuleAlias> TryGetTemplateSpecModuleAlias(string aliasName)
+        {
+            if (!ValidateAliasName(aliasName, out var errorBuilder))
             {
-                return null;
+                return new(errorBuilder);
             }
 
             if (!this.Data.TemplateSpecModuleAliases.TryGetValue(aliasName, out var alias))
             {
-                errorBuilder = x => x.TemplateSpecModuleAliasNameDoesNotExistInConfiguration(aliasName, this.configurationPath);
-                return null;
+                return new(x => x.TemplateSpecModuleAliasNameDoesNotExistInConfiguration(aliasName, configFileUri));
             }
 
             if (alias.Subscription is null)
             {
-                errorBuilder = x => x.InvalidTemplateSpecAliasSubscriptionNullOrUndefined(aliasName, this.configurationPath);
-                return null;
+                return new(x => x.InvalidTemplateSpecAliasSubscriptionNullOrUndefined(aliasName, configFileUri));
             }
 
             if (alias.ResourceGroup is null)
             {
-                errorBuilder = x => x.InvalidTemplateSpecAliasResourceGroupNullOrUndefined(aliasName, this.configurationPath);
-                return null;
+                return new(x => x.InvalidTemplateSpecAliasResourceGroupNullOrUndefined(aliasName, configFileUri));
             }
 
-            errorBuilder = null;
-            return alias;
+            return new(alias);
         }
 
-        public OciArtifactModuleAlias? TryGetOciArtifactModuleAlias(string aliasName, out ErrorBuilderDelegate? errorBuilder)
+        public ResultWithDiagnosticBuilder<OciArtifactModuleAlias> TryGetOciArtifactModuleAlias(string aliasName)
         {
-            if (!ValidateAliasName(aliasName, out errorBuilder))
+            if (!ValidateAliasName(aliasName, out var errorBuilder))
             {
-                return null;
+                return new(errorBuilder);
             }
 
             if (!this.Data.OciArtifactModuleAliases.TryGetValue(aliasName, out var alias))
             {
-                errorBuilder = x => x.OciArtifactModuleAliasNameDoesNotExistInConfiguration(aliasName, this.configurationPath);
-                return null;
+                return new(x => x.OciArtifactModuleAliasNameDoesNotExistInConfiguration(aliasName, configFileUri));
             }
 
             if (alias.Registry is null)
             {
-                errorBuilder = x => x.InvalidOciArtifactModuleAliasRegistryNullOrUndefined(aliasName, this.configurationPath);
-                return null;
+                return new(x => x.InvalidOciArtifactModuleAliasRegistryNullOrUndefined(aliasName, configFileUri));
             }
 
-            errorBuilder = null;
-            return alias;
+            return new(alias);
         }
 
-        private static bool ValidateAliasName(string aliasName, out ErrorBuilderDelegate? errorBuilder)
+        private static bool ValidateAliasName(string aliasName, [NotNullWhen(false)] out DiagnosticBuilderDelegate? errorBuilder)
         {
-            if (!ModuleAliasNameRegex.IsMatch(aliasName))
+            if (!ModuleAliasNameRegex().IsMatch(aliasName))
             {
                 errorBuilder = x => x.InvalidModuleAliasName(aliasName);
                 return false;
@@ -116,5 +120,8 @@ namespace Bicep.Core.Configuration
             errorBuilder = null;
             return true;
         }
+
+        [GeneratedRegex("^[a-zA-Z0-9-_]+$", RegexOptions.CultureInvariant)]
+        private static partial Regex ModuleAliasNameRegex();
     }
 }

@@ -132,9 +132,9 @@ output sub int = sum
 param psExpression string = resourceGroup().location
 ")]
         [DataTestMethod]
-        public void InvalidNonEmptyDefault_TestFails(int diagnosticCount, string text, OnCompileErrors onCompileErrors = OnCompileErrors.Fail)
+        public void InvalidNonEmptyDefault_TestFails(int diagnosticCount, string text, OnCompileErrors onCompileErrors = OnCompileErrors.IncludeErrors)
         {
-            AssertLinterRuleDiagnostics(SecureParameterDefaultRule.Code, text, diagnosticCount, onCompileErrors);
+            AssertLinterRuleDiagnostics(SecureParameterDefaultRule.Code, text, diagnosticCount, new Options(onCompileErrors));
         }
 
         [DataRow(1, @"
@@ -198,7 +198,34 @@ output sub int = sum
         [DataTestMethod]
         public void HandlesSyntaxErrors(int diagnosticCount, string text)
         {
-            AssertLinterRuleDiagnostics(SecureParameterDefaultRule.Code, text, diagnosticCount, OnCompileErrors.Ignore);
+            AssertLinterRuleDiagnostics(SecureParameterDefaultRule.Code, text, diagnosticCount, new Options(OnCompileErrors.Ignore));
+        }
+
+        [DataRow(0, @"
+@secure()
+param param1 string
+
+@secure()
+param param2 string = param1
+")]
+        [DataRow(0, @"
+@secure()
+param param1 string = ''
+
+@secure()
+param param2 string = param1
+")]
+        [DataRow(1, @"
+@secure()
+param param1 string = 'abc'
+
+@secure()
+param param2 string = param1
+")]
+        [DataTestMethod]
+        public void ParameterReassignment_TestPasses(int diagnosticCount, string text)
+        {
+            AssertLinterRuleDiagnostics(SecureParameterDefaultRule.Code, text, diagnosticCount);
         }
 
     }

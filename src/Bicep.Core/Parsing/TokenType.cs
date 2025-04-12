@@ -24,8 +24,8 @@ namespace Bicep.Core.Parsing
         Slash,
         Modulo,
         Exclamation,
-        LessThan,
-        GreaterThan,
+        LeftChevron,
+        RightChevron,
         LessThanOrEqual,
         GreaterThanOrEqual,
         Equals,
@@ -48,5 +48,9 @@ namespace Bicep.Core.Parsing
         EndOfFile,
         DoubleQuestion,
         DoubleColon,
+        Arrow,
+        Pipe,
+        Ellipsis,
+        Hat,
     }
 }

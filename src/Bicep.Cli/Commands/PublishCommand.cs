@@ -1,107 +1,127 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Diagnostics;
+using System.IO.Abstractions;
 using Bicep.Cli.Arguments;
+using Bicep.Cli.Helpers;
 using Bicep.Cli.Logging;
-using Bicep.Cli.Services;
-using Bicep.Core.Configuration;
+using Bicep.Core;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Exceptions;
+using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
-using Bicep.Core.Modules;
-using Bicep.Core.Parsing;
 using Bicep.Core.Registry;
-using System;
-using System.IO;
-using System.IO.Abstractions;
-using System.Threading.Tasks;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.SourceLink;
+using Microsoft.Extensions.Logging;
 
 namespace Bicep.Cli.Commands
 {
     public class PublishCommand : ICommand
     {
-        private readonly IDiagnosticLogger diagnosticLogger;
-        private readonly CompilationService compilationService;
-        private readonly CompilationWriter compilationWriter;
+        private readonly DiagnosticLogger diagnosticLogger;
+        private readonly BicepCompiler compiler;
         private readonly IModuleDispatcher moduleDispatcher;
-        private readonly IConfigurationManager configurationManager;
         private readonly IFileSystem fileSystem;
+        private readonly ISourceFileFactory sourceFileFactory;
+        private readonly IOContext ioContext;
 
         public PublishCommand(
-            IDiagnosticLogger diagnosticLogger,
-            CompilationService compilationService,
-            CompilationWriter compilationWriter,
+            DiagnosticLogger diagnosticLogger,
+            BicepCompiler compiler,
+            IOContext ioContext,
             IModuleDispatcher moduleDispatcher,
-            IConfigurationManager configurationManager,
+            ISourceFileFactory sourceFileFactory,
             IFileSystem fileSystem)
         {
             this.diagnosticLogger = diagnosticLogger;
-            this.compilationService = compilationService;
-            this.compilationWriter = compilationWriter;
+            this.compiler = compiler;
             this.moduleDispatcher = moduleDispatcher;
-            this.configurationManager = configurationManager;
             this.fileSystem = fileSystem;
+            this.sourceFileFactory = sourceFileFactory;
+            this.ioContext = ioContext;
         }
 
         public async Task<int> RunAsync(PublishArguments args)
         {
-            var inputPath = PathHelper.ResolvePath(args.InputFile);
-            var inputUri = PathHelper.FilePathToFileUrl(inputPath);
-            var configuration = this.configurationManager.GetConfiguration(inputUri);
-            var moduleReference = ValidateReference(args.TargetModuleReference, configuration);
+            var inputUri = ArgumentHelper.GetFileUri(args.InputFile);
+            var documentationUri = args.DocumentationUri;
+            var moduleReference = ValidateReference(args.TargetModuleReference, inputUri);
+            var overwriteIfExists = args.Force;
+            var publishSource = args.WithSource;
 
             if (PathHelper.HasArmTemplateLikeExtension(inputUri))
             {
+                if (publishSource)
+                {
+                    await ioContext.Error.WriteLineAsync($"Cannot publish with source when the target is an ARM template file.");
+                    return 1;
+                }
+
                 // Publishing an ARM template file.
-                using var armTemplateStream = this.fileSystem.FileStream.Create(inputPath, FileMode.Open, FileAccess.Read);
-                await this.PublishModuleAsync(configuration, moduleReference, armTemplateStream);
+                using var armTemplateStream = this.fileSystem.FileStream.New(inputUri.LocalPath, FileMode.Open, FileAccess.Read);
+                await this.PublishModuleAsync(moduleReference, BinaryData.FromStream(armTemplateStream), null, documentationUri, overwriteIfExists);
 
                 return 0;
             }
 
-            var compilation = await compilationService.CompileAsync(inputPath, args.NoRestore);
+            var compilation = await compiler.CreateCompilation(inputUri, skipRestore: args.NoRestore);
+            var result = compilation.Emitter.Template();
 
-            if (diagnosticLogger.ErrorCount > 0)
+            var summary = diagnosticLogger.LogDiagnostics(DiagnosticOptions.Default, result.Diagnostics);
+
+            if (result.Template is not { } compiledArmTemplate)
             {
                 // can't publish if we can't compile
                 return 1;
             }
 
-            var stream = new MemoryStream();
-            compilationWriter.ToStream(compilation, stream);
+            // Handle publishing source
+            SourceArchive? sourceArchive = null;
+            if (publishSource)
+            {
+                sourceArchive = SourceArchive.CreateFor(compilation.SourceFileGrouping);
+                Trace.WriteLine("Publishing Bicep module with source");
+            }
 
-            stream.Position = 0;
-            await this.PublishModuleAsync(compilation.Configuration, moduleReference, stream);
+            Trace.WriteLine(sourceArchive is { } ? "Publishing Bicep module with source" : "Publishing Bicep module without source");
+            var sourcesPayload = sourceArchive is { } ? sourceArchive.PackIntoBinaryData() : null;
+            await this.PublishModuleAsync(moduleReference, BinaryData.FromString(compiledArmTemplate), sourcesPayload, documentationUri, overwriteIfExists);
 
             return 0;
         }
 
-        private async Task PublishModuleAsync(RootConfiguration configuration, ModuleReference target, Stream stream)
+        private async Task PublishModuleAsync(ArtifactReference target, BinaryData compiledArmTemplate, BinaryData? bicepSources, string? documentationUri, bool overwriteIfExists)
         {
             try
             {
-                await this.moduleDispatcher.PublishModule(configuration, target, stream);
+                // If we don't want to overwrite, ensure module doesn't exist
+                if (!overwriteIfExists && await this.moduleDispatcher.CheckModuleExists(target))
+                {
+                    throw new BicepException($"The module \"{target.FullyQualifiedReference}\" already exists in registry. Use --force to overwrite the existing module.");
+                }
+                await this.moduleDispatcher.PublishModule(target, compiledArmTemplate, bicepSources, documentationUri);
             }
-            catch (ExternalModuleException exception)
+            catch (ExternalArtifactException exception)
             {
                 throw new BicepException($"Unable to publish module \"{target.FullyQualifiedReference}\": {exception.Message}");
             }
         }
 
-        private ModuleReference ValidateReference(string targetModuleReference, RootConfiguration configuration)
+        private ArtifactReference ValidateReference(string targetModuleReference, Uri targetModuleUri)
         {
-            var moduleReference = this.moduleDispatcher.TryGetModuleReference(targetModuleReference, configuration, out var failureBuilder);
-            if (moduleReference is null)
-            {
-                failureBuilder = failureBuilder ?? throw new InvalidOperationException($"{nameof(moduleDispatcher.TryGetModuleReference)} did not provide an error.");
+            var dummyReferencingFile = this.sourceFileFactory.CreateBicepFile(targetModuleUri, string.Empty);
 
+            if (!this.moduleDispatcher.TryGetArtifactReference(dummyReferencingFile, ArtifactType.Module, targetModuleReference).IsSuccess(out var moduleReference, out var failureBuilder))
+            {
                 // TODO: We should probably clean up the dispatcher contract so this sort of thing isn't necessary (unless we change how target module is set in this command)
-                var message = failureBuilder(new DiagnosticBuilder.DiagnosticBuilderInternal(new TextSpan(0, 0))).Message;
+                var message = failureBuilder(DiagnosticBuilder.ForDocumentStart()).Message;
 
                 throw new BicepException(message);
             }
 
-            if (!this.moduleDispatcher.GetRegistryCapabilities(moduleReference).HasFlag(RegistryCapabilities.Publish))
+            if (!this.moduleDispatcher.GetRegistryCapabilities(ArtifactType.Module, moduleReference).HasFlag(RegistryCapabilities.Publish))
             {
                 throw new BicepException($"The specified module target \"{targetModuleReference}\" is not supported.");
             }

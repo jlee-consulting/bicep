@@ -1,11 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Linq;
+using System.Collections.Immutable;
 using Bicep.Core.Resources;
 using Bicep.Core.Semantics;
 using Bicep.Core.Semantics.Namespaces;
 using Bicep.Core.TypeSystem;
-using Bicep.Core.TypeSystem.Az;
+using Bicep.Core.TypeSystem.Providers.Az;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.UnitTests.Utils
 {
@@ -18,27 +19,47 @@ namespace Bicep.Core.UnitTests.Utils
         {
             var resourceType = ResourceTypeReference.Parse("Test.Rp/basicTests@2020-01-01");
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
-                AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
-                    new TypeProperty("kind", LanguageConstants.String, TypePropertyFlags.ReadOnly, "kind property"),
-                }), null));
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None,
+                new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
+                    AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
+                        new NamedTypeProperty("kind", LanguageConstants.String, TypePropertyFlags.ReadOnly, "kind property"),
+                    }), null));
         }
 
         private static ResourceTypeComponents ReadWriteTestsType()
         {
             var resourceType = ResourceTypeReference.Parse("Test.Rp/readWriteTests@2020-01-01");
 
-            var propertiesType = new ObjectType("Properties", TypeSymbolValidationFlags.WarnOnTypeMismatch, new[] {
-                new TypeProperty("readwrite", LanguageConstants.String, TypePropertyFlags.None, "This is a property which supports reading AND writing!"),
-                new TypeProperty("readonly", LanguageConstants.String, TypePropertyFlags.ReadOnly, "This is a property which only supports reading."),
-                new TypeProperty("writeonly", LanguageConstants.String, TypePropertyFlags.WriteOnly, "This is a property which only supports writing."),
-                new TypeProperty("required", LanguageConstants.String, TypePropertyFlags.Required, "This is a property which is required."),
+            var propertiesType = new ObjectType("Properties", TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch, new[] {
+                new NamedTypeProperty("readwrite", LanguageConstants.String, TypePropertyFlags.None, "This is a property which supports reading AND writing!"),
+                new NamedTypeProperty("readonly", LanguageConstants.String, TypePropertyFlags.ReadOnly, "This is a property which only supports reading."),
+                new NamedTypeProperty("writeonly", LanguageConstants.String, TypePropertyFlags.WriteOnly, "This is a property which only supports writing."),
+                new NamedTypeProperty("required", LanguageConstants.String, TypePropertyFlags.Required, "This is a property which is required."),
             }, null);
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
-                AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
-                    new TypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
-                }), null));
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None,
+                new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
+                    AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
+                        new NamedTypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
+                    }), null));
+        }
+
+        private static ResourceTypeComponents ReadOnlyTestsType()
+        {
+            var resourceType = ResourceTypeReference.Parse("Test.Rp/readOnlyTests@2020-01-01");
+
+            var propertiesType = new ObjectType("Properties", TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch, new[] {
+                new NamedTypeProperty("readwrite", LanguageConstants.String, TypePropertyFlags.None, "This is a property which supports reading AND writing!"),
+                new NamedTypeProperty("readonly", LanguageConstants.String, TypePropertyFlags.ReadOnly, "This is a property which only supports reading."),
+                new NamedTypeProperty("writeonly", LanguageConstants.String, TypePropertyFlags.WriteOnly, "This is a property which only supports writing."),
+                new NamedTypeProperty("required", LanguageConstants.String, TypePropertyFlags.Required, "This is a property which is required."),
+            }, null);
+
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.ReadOnly,
+                new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
+                    AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
+                        new NamedTypeProperty("properties", propertiesType, TypePropertyFlags.ReadOnly, "properties property"),
+                    }), null));
         }
 
         private static ResourceTypeComponents DiscriminatorTestsType()
@@ -47,17 +68,17 @@ namespace Bicep.Core.UnitTests.Utils
 
             var bodyAProps = new ObjectType(
                 "BodyAProperties",
-                TypeSymbolValidationFlags.WarnOnTypeMismatch,
+                TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch,
                 new[] {
-                    new TypeProperty("propA", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propA!"),
+                    new NamedTypeProperty("propA", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propA!"),
                 },
                 null);
 
             var bodyBProps = new ObjectType(
                 "BodyBProperties",
-                TypeSymbolValidationFlags.WarnOnTypeMismatch,
+                TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch,
                 new[] {
-                    new TypeProperty("propB", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propB!"),
+                    new NamedTypeProperty("propB", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propB!"),
                 },
                 null);
 
@@ -67,16 +88,16 @@ namespace Bicep.Core.UnitTests.Utils
                 "kind",
                 new[] {
                     new ObjectType("BodyA", TypeSymbolValidationFlags.Default, AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new [] {
-                        new TypeProperty("kind", new StringLiteralType("BodyA"), TypePropertyFlags.None, "This is the kind of body A"),
-                        new TypeProperty("properties", bodyAProps, TypePropertyFlags.None, "These are the properties for body A"),
+                        new NamedTypeProperty("kind", TypeFactory.CreateStringLiteralType("BodyA"), TypePropertyFlags.None, "This is the kind of body A"),
+                        new NamedTypeProperty("properties", bodyAProps, TypePropertyFlags.None, "These are the properties for body A"),
                     }), null),
                     new ObjectType("BodyB", TypeSymbolValidationFlags.Default, AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new [] {
-                        new TypeProperty("kind", new StringLiteralType("BodyB"), TypePropertyFlags.None, "This is the kind of body B"),
-                        new TypeProperty("properties", bodyBProps, TypePropertyFlags.None, "These are the properties for body B"),
+                        new NamedTypeProperty("kind", TypeFactory.CreateStringLiteralType("BodyB"), TypePropertyFlags.None, "This is the kind of body B"),
+                        new NamedTypeProperty("properties", bodyBProps, TypePropertyFlags.None, "These are the properties for body B"),
                     }), null),
                 });
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, bodyType);
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None, bodyType);
         }
 
         private static ResourceTypeComponents DiscriminatedPropertiesTestsType()
@@ -85,19 +106,19 @@ namespace Bicep.Core.UnitTests.Utils
 
             var propsA = new ObjectType(
                 "PropertiesA",
-                TypeSymbolValidationFlags.WarnOnTypeMismatch,
+                TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch,
                 new[] {
-                    new TypeProperty("propType", new StringLiteralType("PropertiesA"), TypePropertyFlags.None, "..."),
-                    new TypeProperty("propA", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propA!"),
+                    new NamedTypeProperty("propType", TypeFactory.CreateStringLiteralType("PropertiesA"), TypePropertyFlags.None, "..."),
+                    new NamedTypeProperty("propA", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propA!"),
                 },
                 null);
 
             var propsB = new ObjectType(
                 "PropertiesB",
-                TypeSymbolValidationFlags.WarnOnTypeMismatch,
+                TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch,
                 new[] {
-                    new TypeProperty("propType", new StringLiteralType("PropertiesB"), TypePropertyFlags.None, "..."),
-                    new TypeProperty("propB", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propB!"),
+                    new NamedTypeProperty("propType", TypeFactory.CreateStringLiteralType("PropertiesB"), TypePropertyFlags.None, "..."),
+                    new NamedTypeProperty("propB", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propB!"),
                 },
                 null);
 
@@ -107,10 +128,11 @@ namespace Bicep.Core.UnitTests.Utils
                 "propType",
                 new[] { propsA, propsB });
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
-                AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
-                    new TypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
-                }), null));
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None,
+                new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
+                    AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
+                        new NamedTypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
+                    }), null));
         }
 
         private static ResourceTypeComponents DiscriminatedPropertiesTestsType2()
@@ -119,17 +141,17 @@ namespace Bicep.Core.UnitTests.Utils
 
             var bodyAProps = new ObjectType(
                 "BodyAProperties",
-                TypeSymbolValidationFlags.WarnOnTypeMismatch,
+                TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch,
                 new[] {
-                    new TypeProperty("propA", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propA!"),
+                    new NamedTypeProperty("propA", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propA!"),
                 },
                 null);
 
             var bodyBProps = new ObjectType(
                 "BodyBProperties",
-                TypeSymbolValidationFlags.WarnOnTypeMismatch,
+                TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch,
                 new[] {
-                    new TypeProperty("propB", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propB!"),
+                    new NamedTypeProperty("propB", LanguageConstants.String, TypePropertyFlags.None, "This is the description for propB!"),
                 },
                 null);
 
@@ -139,36 +161,38 @@ namespace Bicep.Core.UnitTests.Utils
                 "propType",
                 new[] {
                     new ObjectType("BodyA", TypeSymbolValidationFlags.Default, AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new [] {
-                        new TypeProperty("propType", new StringLiteralType("PropertiesA"), TypePropertyFlags.None, "This is the propType of body A"),
-                        new TypeProperty("values", bodyAProps, TypePropertyFlags.None, "These are the properties for body A"),
+                        new NamedTypeProperty("propType", TypeFactory.CreateStringLiteralType("PropertiesA"), TypePropertyFlags.None, "This is the propType of body A"),
+                        new NamedTypeProperty("values", bodyAProps, TypePropertyFlags.None, "These are the properties for body A"),
                     }), null),
                     new ObjectType("BodyB", TypeSymbolValidationFlags.Default, AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new [] {
-                        new TypeProperty("propType", new StringLiteralType("PropertiesB"), TypePropertyFlags.None, "This is the propType of body B"),
-                        new TypeProperty("values", bodyBProps, TypePropertyFlags.None, "These are the properties for body B"),
+                        new NamedTypeProperty("propType", TypeFactory.CreateStringLiteralType("PropertiesB"), TypePropertyFlags.None, "This is the propType of body B"),
+                        new NamedTypeProperty("values", bodyBProps, TypePropertyFlags.None, "These are the properties for body B"),
                     }), null),
                 });
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
-                AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
-                    new TypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
-                }), null));
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None,
+                new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
+                    AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
+                        new NamedTypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
+                    }), null));
         }
 
         private static ResourceTypeComponents FallbackPropertyTestsType()
         {
             var resourceType = ResourceTypeReference.Parse("Test.Rp/fallbackProperties@2020-01-01");
 
-            var propertiesType = new ObjectType("Properties", TypeSymbolValidationFlags.WarnOnTypeMismatch, new[] {
-                new TypeProperty("required", LanguageConstants.String, TypePropertyFlags.Required, "This is a property which is required."),
+            var propertiesType = new ObjectType("Properties", TypeSymbolValidationFlags.WarnOnPropertyTypeMismatch, new[] {
+                new NamedTypeProperty("required", LanguageConstants.String, TypePropertyFlags.Required, "This is a property which is required."),
             }, null);
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
-                AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
-                    new TypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
-                }).Concat(
-                    AzResourceTypeProvider.KnownTopLevelResourceProperties().Where(p => !string.Equals(p.Name, "properties", LanguageConstants.IdentifierComparison))
-                                     .Select(p => new TypeProperty(p.Name, p.TypeReference, TypePropertyFlags.None, "Property that does something important"))
-                ), null));
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None,
+                new ObjectType(resourceType.FormatName(), TypeSymbolValidationFlags.Default,
+                    AzResourceTypeProvider.GetCommonResourceProperties(resourceType).Concat(new[] {
+                        new NamedTypeProperty("properties", propertiesType, TypePropertyFlags.Required, "properties property"),
+                    }).Concat(
+                        AzResourceTypeProvider.KnownTopLevelResourceProperties().Where(p => !string.Equals(p.Name, "properties", LanguageConstants.IdentifierComparison))
+                                        .Select(p => new NamedTypeProperty(p.Name, p.TypeReference, TypePropertyFlags.None, "Property that does something important"))
+                    ), null));
         }
 
         private static ResourceTypeComponents ListFunctionsType()
@@ -177,18 +201,18 @@ namespace Bicep.Core.UnitTests.Utils
 
             var noInputOutput = new ObjectType("NoInputOutput", TypeSymbolValidationFlags.Default,
                 new[] {
-                    new TypeProperty("noInputOutputVal", LanguageConstants.String, TypePropertyFlags.ReadOnly, "Foo description"),
+                    new NamedTypeProperty("noInputOutputVal", LanguageConstants.String, TypePropertyFlags.ReadOnly, "Foo description"),
                 }, null);
 
             var withInputInput = new ObjectType("WithInputInput", TypeSymbolValidationFlags.Default,
                 new[] {
-                    new TypeProperty("withInputInputVal", LanguageConstants.String, TypePropertyFlags.WriteOnly | TypePropertyFlags.Required, "Foo description"),
-                    new TypeProperty("optionalVal", LanguageConstants.String, TypePropertyFlags.WriteOnly, "optionalVal description"),
-                    new TypeProperty("optionalLiteralVal", TypeHelper.CreateTypeUnion(new StringLiteralType("either"), new StringLiteralType("or")), TypePropertyFlags.WriteOnly, "optionalLiteralVal description"),
+                    new NamedTypeProperty("withInputInputVal", LanguageConstants.String, TypePropertyFlags.WriteOnly | TypePropertyFlags.Required, "Foo description"),
+                    new NamedTypeProperty("optionalVal", LanguageConstants.String, TypePropertyFlags.WriteOnly, "optionalVal description"),
+                    new NamedTypeProperty("optionalLiteralVal", TypeHelper.CreateTypeUnion(TypeFactory.CreateStringLiteralType("either"), TypeFactory.CreateStringLiteralType("or")), TypePropertyFlags.WriteOnly, "optionalLiteralVal description"),
                 }, null);
             var withInputOutput = new ObjectType("WithInputOutput", TypeSymbolValidationFlags.Default,
                 new[] {
-                    new TypeProperty("withInputOutputVal", LanguageConstants.String, TypePropertyFlags.ReadOnly, "Foo description"),
+                    new NamedTypeProperty("withInputOutputVal", LanguageConstants.String, TypePropertyFlags.ReadOnly, "Foo description"),
                 }, null);
 
             var overloads = new[]
@@ -202,32 +226,36 @@ namespace Bicep.Core.UnitTests.Utils
                     .WithFlags(FunctionFlags.RequiresInlining)
                     .Build(),
                 new FunctionOverloadBuilder("listWithInput")
-                    .WithRequiredParameter("apiVersion", new StringLiteralType(resourceType.ApiVersion!), "The api version")
+                    .WithRequiredParameter("apiVersion", TypeFactory.CreateStringLiteralType(resourceType.ApiVersion!), "The api version")
                     .WithRequiredParameter("params", withInputInput, "listWithInput parameters")
                     .WithReturnType(withInputOutput)
                     .WithFlags(FunctionFlags.RequiresInlining)
                     .Build(),
             };
 
-            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup,
+            return new ResourceTypeComponents(resourceType, ResourceScope.ResourceGroup, ResourceScope.None, ResourceFlags.None,
                 new ObjectType(
                     resourceType.FormatName(),
                     TypeSymbolValidationFlags.Default,
                     AzResourceTypeProvider.GetCommonResourceProperties(resourceType),
                     null,
-                    TypePropertyFlags.None,
                     overloads));
         }
 
+        public static ImmutableArray<ResourceTypeComponents> Types { get; } = [
+            BasicTestsType(),
+            ReadWriteTestsType(),
+            ReadOnlyTestsType(),
+            DiscriminatorTestsType(),
+            DiscriminatedPropertiesTestsType(),
+            DiscriminatedPropertiesTestsType2(),
+            FallbackPropertyTestsType(),
+            ListFunctionsType(),
+        ];
+
         public static INamespaceProvider Create()
-            => TestTypeHelper.CreateProviderWithTypes(new[] {
-                BasicTestsType(),
-                ReadWriteTestsType(),
-                DiscriminatorTestsType(),
-                DiscriminatedPropertiesTestsType(),
-                DiscriminatedPropertiesTestsType2(),
-                FallbackPropertyTestsType(),
-                ListFunctionsType(),
-            });
+            => new NamespaceProvider(
+                   TestTypeHelper.CreateResourceTypeLoaderFactory(
+                    TestTypeHelper.CreateAzResourceTypeProviderWithTypes(Types)));
     }
 }

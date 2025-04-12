@@ -1,27 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using Bicep.Core.Diagnostics;
 
-namespace Bicep.Core.Emit
-{
-    public class EmitResult
-    {
-        public EmitResult(EmitStatus status, IEnumerable<IDiagnostic> diagnostics)
-        {
-            this.Status = status;
-            this.Diagnostics = diagnostics.ToImmutableArray();
-        }
+namespace Bicep.Core.Emit;
 
-        /// <summary>
-        /// Gets the status of the emit operation.
-        /// </summary>
-        public EmitStatus Status { get; }
-
-        /// <summary>
-        /// Gets a list of diagnostics collected during the emit operation.
-        /// </summary>
-        public ImmutableArray<IDiagnostic> Diagnostics { get; }
-    }
-}
+/// <param name="Status">The status of the emit operation.</param>
+/// <param name="Diagnostics">The list of diagnostics collected during the emit operation.</param>
+/// <param name="SourceMap">Source map created during the emit operation.</param>
+public record EmitResult(
+    EmitStatus Status,
+    ImmutableArray<IDiagnostic> Diagnostics,
+    SourceMap? SourceMap = null);

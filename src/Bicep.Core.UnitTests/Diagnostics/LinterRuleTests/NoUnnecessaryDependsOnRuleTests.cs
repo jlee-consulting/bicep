@@ -9,9 +9,12 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
     [TestClass]
     public class NoUnnecessaryDependsOnRuleTests : LinterRuleTestsBase
     {
+        private void AssertCodeFix(string inputFile, string resultFile)
+            => AssertCodeFix(NoUnnecessaryDependsOnRule.Code, "Remove unnecessary dependsOn", inputFile, resultFile);
+
         private void CompileAndTest(string text, OnCompileErrors onCompileErrors, string[] expectedMessages)
         {
-            AssertLinterRuleDiagnostics(NoUnnecessaryDependsOnRule.Code, text, expectedMessages, onCompileErrors);
+            AssertLinterRuleDiagnostics(NoUnnecessaryDependsOnRule.Code, text, expectedMessages, new Options(onCompileErrors, IncludePosition.None));
         }
 
         [TestMethod]
@@ -56,8 +59,8 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                 ]
               }
             ",
-              OnCompileErrors.Fail,
-              System.Array.Empty<string>()
+              OnCompileErrors.IncludeErrors,
+              []
             );
         }
 
@@ -90,9 +93,9 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   ]
                 }
             ",
-              OnCompileErrors.Fail,
-              new string[] {
-                "Remove unnecessary dependsOn entry 'appServicePlan'."}
+              OnCompileErrors.IncludeErrors,
+              [
+                "Remove unnecessary dependsOn entry 'appServicePlan'."]
             );
         }
 
@@ -122,10 +125,10 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   ]
                 }
             ",
-              OnCompileErrors.Fail,
-              new string[] {
+              OnCompileErrors.IncludeErrors,
+              [
                 "Remove unnecessary dependsOn entry 'appServicePlan'."
-              }
+              ]
             );
         }
 
@@ -154,9 +157,9 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                     }
             ",
               OnCompileErrors.Ignore,
-              new string[] {
+              [
                 "Remove unnecessary dependsOn entry 'storageaccount'."
-              }
+              ]
             );
         }
 
@@ -185,10 +188,10 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   ]
                 }
             ",
-              OnCompileErrors.Fail,
-              new string[] {
+              OnCompileErrors.IncludeErrors,
+              [
                 "Remove unnecessary dependsOn entry 'appServicePlan'."
-              });
+              ]);
         }
 
         [TestMethod]
@@ -219,11 +222,11 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   }
                 }
             ",
-              OnCompileErrors.Fail,
-              new string[] {
+              OnCompileErrors.IncludeErrors,
+              [
                 "" +
                 "Remove unnecessary dependsOn entry 'vnet'."
-              });
+              ]);
         }
 
         [TestMethod]
@@ -254,10 +257,10 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   ]
                 }
             ",
-              OnCompileErrors.Fail,
-              new string[] {
+              OnCompileErrors.IncludeErrors,
+              [
               "Remove unnecessary dependsOn entry 'vnet'."
-              }
+              ]
             );
         }
 
@@ -266,7 +269,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         {
             CompileAndTest(
                @"
-                resource vn 'Microsoft.Network/virtualNetworks@2020-06-01' existing =  {
+                resource vn 'Microsoft.Network/virtualNetworks@2020-06-01' =  {
                   name: 'vn'
 
                   resource subnet1 'subnets@2020-06-01' = {
@@ -289,12 +292,44 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   }
                 }
             ",
-              OnCompileErrors.Fail,
-              new string[] {
+              OnCompileErrors.IncludeErrors,
+              [
                 "Remove unnecessary dependsOn entry 'vn'.",
-                "Remove unnecessary dependsOn entry 'vn'."
-              }
+                  "Remove unnecessary dependsOn entry 'vn'."
+              ]
             );
+        }
+
+        [TestMethod]
+        public void If_DuplicateEntries_WhereOneValid_ShouldFailForLast()
+        {
+            CompileAndTest(
+                """
+                resource vn 'Microsoft.Network/virtualNetworks@2020-06-01' existing =  {
+                  name: 'vn'
+
+                  resource subnet1 'subnets@2020-06-01' = {
+                    name: 'subnet1'
+                    properties: {
+                      addressPrefix: '10.0.1.0/24'
+                    }
+                  }
+
+                  resource subnet2 'subnets@2020-06-01' = {
+                    name: 'subnet2'
+                    properties: {
+                      addressPrefix: '10.0.1.0/24'
+                    }
+                    dependsOn: [
+                      vn
+                      subnet1
+                      vn
+                    ]
+                  }
+                }
+                """,
+                OnCompileErrors.IncludeErrors,
+                ["Remove unnecessary dependsOn entry 'vn'."]);
         }
 
         [TestMethod]
@@ -334,20 +369,20 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   }
                 }
                 ",
-                OnCompileErrors.Fail,
-                new string[] {
+                OnCompileErrors.IncludeErrors,
+                [
                     "Remove unnecessary dependsOn entry 'grandparent'.",
                     "Remove unnecessary dependsOn entry 'parent'.",
                     "Remove unnecessary dependsOn entry 'parent'.",
                     "Remove unnecessary dependsOn entry 'grandchild'.",
-            });
+                ]);
         }
 
         [TestMethod]
         public void If_UnnecessaryReferenceToParent_FromLoop_ToNonLoopedParent_Should_Fail()
         {
             CompileAndTest(@"
-                resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' existing = {
+                resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' = {
                   name: 'vn'
                 }
 
@@ -359,12 +394,30 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                   ]
                 }]
             ",
-              OnCompileErrors.Fail,
-              new string[] {
+              OnCompileErrors.IncludeErrors,
+              [
                 "Remove unnecessary dependsOn entry 'vn'."
-              }
+              ]
             );
         }
+
+        [TestMethod]
+        public void Explicit_dependsOn_on_existing_parent_should_ignore_and_pass() => CompileAndTest(
+            """
+            resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' existing = {
+              name: 'vn'
+            }
+                
+            resource blobServices 'Microsoft.Network/virtualNetworks/subnets@2021-02-01' = [for i in range(0, 3): {
+              name: 'blobs${i}'
+              parent: vn
+              dependsOn: [
+                vn
+              ]
+            }]
+            """,
+            OnCompileErrors.IncludeErrors,
+            []);
 
         [TestMethod]
         public void If_ReferencesResourceByIndex_Simple_Should_IgnoreAndPass()
@@ -382,8 +435,8 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                 ]
               }]
             ",
-              OnCompileErrors.Fail,
-              System.Array.Empty<string>()
+              OnCompileErrors.IncludeErrors,
+              []
             );
         }
 
@@ -423,8 +476,8 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                 ]
               }
             ",
-              OnCompileErrors.Fail,
-              System.Array.Empty<string>()
+              OnCompileErrors.IncludeErrors,
+              []
             );
         }
 
@@ -444,34 +497,33 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                 ]
               }]
             ",
-            OnCompileErrors.Fail,
-            System.Array.Empty<string>()
+            OnCompileErrors.IncludeErrors,
+            []
           );
         }
 
-        // TODO: We don't currently support analyzing dependencies to modules
-        //[TestMethod]
-        //public void If_Unnecessary_DependsOn_ForModule_Should_Fail()
-        //{
-        //    CompileAndTest(@"
-        //        module m1 'module.bicep' = {
-        //          name: 'm1'
-        //          dependsOn: []
-        //        }
+        [TestMethod]
+        public void If_Unnecessary_DependsOn_ForModule_Should_Fail()
+        {
+            CompileAndTest(@"
+                module m1 'module.bicep' = {
+                  name: 'm1'
+                  dependsOn: []
+                }
 
-        //        resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' = [for i in range(0, 1): {
-        //          name: '${m1.name}${i}'
-        //          dependsOn: [
-        //            m1 // fails
-        //          ]
-        //        }]
-        //    ",
-        //    OnCompileErrors.Ignore, // Will get an error about not finding the module
-        //    new string[] {
-        //        "Remove unnecessary dependsOn entry 'm1'."
-        //    }
-        //  );
-        //}
+                resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' = [for i in range(0, 1): {
+                  name: '${m1.name}${i}'
+                  dependsOn: [
+                    m1 // fails
+                  ]
+                }]
+            ",
+            OnCompileErrors.Ignore, // Will get an error about not finding the module
+            [
+                "Remove unnecessary dependsOn entry 'm1'."
+            ]
+          );
+        }
 
         [TestMethod]
         public void TolerantOfSyntaxErrors_1()
@@ -486,7 +538,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
               }
             ",
             OnCompileErrors.Ignore,
-            System.Array.Empty<string>()
+            []
           );
         }
 
@@ -513,7 +565,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
               }
             ",
             OnCompileErrors.Ignore,
-            System.Array.Empty<string>()
+            []
           );
         }
 
@@ -554,8 +606,151 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
                 }]
             ",
             OnCompileErrors.Ignore,
-            System.Array.Empty<string>()
+            []
           );
         }
+
+        [TestMethod]
+        public void Codefix_removes_dependsOn_element() => AssertCodeFix(@"
+resource appServicePlan 'Microsoft.Web/serverfarms@2020-12-01' = {
+  name: 'name'
+  location: resourceGroup().location
+  sku: {
+    name: 'F1'
+    capacity: 1
+  }
+}
+
+resource webApplication 'Microsoft.Web/sites@2018-11-01' = {
+  name: 'name'
+  location: resourceGroup().location
+  properties: {
+    serverFarmId: 'appServicePlanId'
+    dependsOn: [
+      // This should be picked up as a dependency of appServicePlan and not ignored, even though the property name is
+      // dependsOn, but it's not a top-level property
+      appServicePlan.id
+    ]
+  }
+  dependsOn: [
+    appSer|vicePlan // Should fail because we already have reference to appServicePlan.id in non-top-level property dependsOn
+  ]
+}
+", @"
+resource appServicePlan 'Microsoft.Web/serverfarms@2020-12-01' = {
+  name: 'name'
+  location: resourceGroup().location
+  sku: {
+    name: 'F1'
+    capacity: 1
+  }
+}
+
+resource webApplication 'Microsoft.Web/sites@2018-11-01' = {
+  name: 'name'
+  location: resourceGroup().location
+  properties: {
+    serverFarmId: 'appServicePlanId'
+    dependsOn: [
+      // This should be picked up as a dependency of appServicePlan and not ignored, even though the property name is
+      // dependsOn, but it's not a top-level property
+      appServicePlan.id
+    ]
+  }
+}
+");
+
+        [TestMethod]
+        public void Codefix_for_If_UnnecessaryReferenceToParent_FromLoop_ToNonLoopedParent() => AssertCodeFix(@"
+resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' = {
+  name: 'vn'
+}
+
+resource blobServices 'Microsoft.Network/virtualNetworks/subnets@2021-02-01' = [for i in range(0, 3): {
+  name: 'blobs${i}'
+  parent: vn
+  dependsOn: [
+    vn|
+  ]
+}]
+", @"
+resource vn 'Microsoft.Network/virtualNetworks@2021-02-01' = {
+  name: 'vn'
+}
+
+resource blobServices 'Microsoft.Network/virtualNetworks/subnets@2021-02-01' = [for i in range(0, 3): {
+  name: 'blobs${i}'
+  parent: vn
+}]
+");
+
+        [TestMethod]
+        public void Codefix_for_If_Explicit_DependsOn_ToParent_FromGrandChild_UsingColonNotation() => AssertCodeFix(@"
+resource grandparent 'Microsoft.Network/virtualNetworks@2020-06-01' = {
+  location: resourceGroup().location
+  name: 'grandparent'
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        '10.0.0.0/20'
+      ]
+    }
+  }
+  resource parent 'subnets@2020-06-01' = {
+    name: 'parent'
+    properties: {
+      addressPrefix: '10.0.1.0/24'
+    }
+    resource grandchild 'DoesntExistButThatsOkay@2020-10-01' = {
+      name: 'grandchild'
+      dependsOn: [
+        grandparent
+        grandparent::parent
+      ]
+      resource greatgrandchild 'DoesntExistButThatsOkay@2020-10-01' = {
+          name: 'greatgrandchild'
+          dependsOn: [
+            grandparent::parent
+            grandparent::pa|rent::grandchild
+          ]
+      }
+    }
+  }
+}
+", @"
+resource grandparent 'Microsoft.Network/virtualNetworks@2020-06-01' = {
+  location: resourceGroup().location
+  name: 'grandparent'
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        '10.0.0.0/20'
+      ]
+    }
+  }
+  resource parent 'subnets@2020-06-01' = {
+    name: 'parent'
+    properties: {
+      addressPrefix: '10.0.1.0/24'
+    }
+    resource grandchild 'DoesntExistButThatsOkay@2020-10-01' = {
+      name: 'grandchild'
+      dependsOn: [
+        grandparent
+        grandparent::parent
+      ]
+      resource greatgrandchild 'DoesntExistButThatsOkay@2020-10-01' = {
+          name: 'greatgrandchild'
+          dependsOn: [
+            grandparent::parent
+          ]
+      }
+    }
+  }
+}
+");
     }
 }
+
+
+

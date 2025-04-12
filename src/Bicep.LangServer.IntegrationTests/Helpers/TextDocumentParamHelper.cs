@@ -1,20 +1,23 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+using Bicep.Core;
+using Bicep.Core.FileSystem;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using Bicep.Core;
-using System.IO;
 
 namespace Bicep.LangServer.IntegrationTests.Helpers
 {
     public static class TextDocumentParamHelper
     {
         public static DidOpenTextDocumentParams CreateDidOpenDocumentParams(DocumentUri documentUri, string text, int version) =>
-            new DidOpenTextDocumentParams
+            new()
             {
                 TextDocument = new TextDocumentItem
                 {
-                    LanguageId = LanguageConstants.LanguageId,
+                    LanguageId =
+                        PathHelper.HasBicepparamsExtension(documentUri.ToUriEncoded()) ? LanguageConstants.ParamsLanguageId :
+                        PathHelper.HasArmTemplateLikeExtension(documentUri.ToUriEncoded()) ? LanguageConstants.ArmTemplateLanguageId :
+                        LanguageConstants.LanguageId,
                     Version = version,
                     Uri = documentUri,
                     Text = text,
@@ -28,7 +31,7 @@ namespace Bicep.LangServer.IntegrationTests.Helpers
                 version);
 
         public static DidChangeTextDocumentParams CreateDidChangeTextDocumentParams(DocumentUri documentUri, string text, int version) =>
-            new DidChangeTextDocumentParams
+            new()
             {
                 TextDocument = new OptionalVersionedTextDocumentIdentifier
                 {

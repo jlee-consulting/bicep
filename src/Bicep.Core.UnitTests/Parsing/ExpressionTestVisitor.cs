@@ -6,7 +6,7 @@ using Bicep.Core.Syntax;
 
 namespace Bicep.Core.UnitTests.Parsing
 {
-    public sealed class ExpressionTestVisitor : SyntaxVisitor
+    public sealed class ExpressionTestVisitor : CstVisitor
     {
         private readonly StringBuilder buffer;
 
@@ -58,6 +58,12 @@ namespace Bicep.Core.UnitTests.Parsing
             base.VisitArrayAccessSyntax(syntax);
             this.buffer.Append(')');
         }
+
+        public override void VisitNonNullAssertionSyntax(NonNullAssertionSyntax syntax)
+        {
+            this.buffer.Append('(');
+            base.VisitNonNullAssertionSyntax(syntax);
+            this.buffer.Append(')');
+        }
     }
 }
-

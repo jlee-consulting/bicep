@@ -2,31 +2,55 @@
 // Licensed under the MIT License.
 
 using Bicep.Cli.Arguments;
+using Bicep.Cli.Helpers;
 using Bicep.Cli.Logging;
-using Bicep.Cli.Services;
-using Bicep.Core.FileSystem;
-using System.Threading.Tasks;
+using Bicep.Core;
+using Bicep.Core.Utils;
 
-namespace Bicep.Cli.Commands
+namespace Bicep.Cli.Commands;
+
+public class RestoreCommand(
+    IEnvironment environment,
+    BicepCompiler compiler,
+    DiagnosticLogger diagnosticLogger) : ICommand
 {
-    public class RestoreCommand : ICommand
+    public async Task<int> RunAsync(RestoreArguments args)
     {
-        private readonly CompilationService compilationService;
-        private readonly IDiagnosticLogger diagnosticLogger;
-
-        public RestoreCommand(CompilationService compilationService, IDiagnosticLogger diagnosticLogger)
+        if (args.InputFile is null)
         {
-            this.compilationService = compilationService;
-            this.diagnosticLogger = diagnosticLogger;
+            var summaryMultiple = await RestoreMultiple(args);
+            return CommandHelper.GetExitCode(summaryMultiple);
         }
 
-        public async Task<int> RunAsync(RestoreArguments args)
-        {
-            var inputPath = PathHelper.ResolvePath(args.InputFile);
-            await this.compilationService.RestoreAsync(inputPath, args.ForceModulesRestore);
+        var inputUri = ArgumentHelper.GetFileUri(args.InputFile);
+        ArgumentHelper.ValidateBicepOrBicepParamFile(inputUri);
 
-            // return non-zero exit code on errors
-            return diagnosticLogger.ErrorCount > 0 ? 1 : 0;
+        var summary = await Restore(inputUri, args.ForceModulesRestore);
+        return CommandHelper.GetExitCode(summary);
+    }
+
+    private async Task<DiagnosticSummary> Restore(Uri inputUri, bool force)
+    {
+        var compilation = compiler.CreateCompilationWithoutRestore(inputUri, markAllForRestore: force);
+        var restoreDiagnostics = await compiler.Restore(compilation, forceRestore: force);
+
+        var summary = diagnosticLogger.LogDiagnostics(DiagnosticOptions.Default, restoreDiagnostics);
+
+        return summary;
+    }
+
+    public async Task<DiagnosticSummary> RestoreMultiple(RestoreArguments args)
+    {
+        var hasErrors = false;
+
+        foreach (var inputUri in CommandHelper.GetFilesMatchingPattern(environment, args.FilePattern))
+        {
+            ArgumentHelper.ValidateBicepOrBicepParamFile(inputUri);
+
+            var result = await Restore(inputUri, args.ForceModulesRestore);
+            hasErrors |= result.HasErrors;
         }
+
+        return new(hasErrors);
     }
 }

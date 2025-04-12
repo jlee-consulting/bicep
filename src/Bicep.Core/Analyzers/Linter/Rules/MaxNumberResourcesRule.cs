@@ -3,9 +3,6 @@
 
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Semantics;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace Bicep.Core.Analyzers.Linter.Rules
 {
@@ -17,8 +14,8 @@ namespace Bicep.Core.Analyzers.Linter.Rules
         public MaxNumberResourcesRule() : base(
             code: Code,
             description: CoreResources.MaxNumberResourcesRuleDescription,
-            docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"),
-            diagnosticLevel: DiagnosticLevel.Error)
+            LinterRuleCategory.DeploymentError,
+            docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         { }
 
         public override string FormatMessage(params object[] values)
@@ -26,14 +23,14 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             return string.Format(CoreResources.MaxNumberResourcesRuleMessageFormat, values);
         }
 
-        override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
+        override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
         {
             if (model.DeclaredResources.Length > MaxNumber)
             {
                 var firstItem = model.DeclaredResources.Where(r => r.Parent is null).First();
-                return new IDiagnostic[] { CreateDiagnosticForSpan(firstItem.Symbol.NameSyntax.Span, MaxNumber) };
+                return new IDiagnostic[] { CreateDiagnosticForSpan(diagnosticLevel, firstItem.Symbol.NameSource.Span, MaxNumber) };
             }
-            return Enumerable.Empty<IDiagnostic>();
+            return [];
         }
     }
 }

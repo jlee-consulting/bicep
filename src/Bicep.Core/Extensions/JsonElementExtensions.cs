@@ -1,14 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Buffers;
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Bicep.Core.Json;
 using Json.Patch;
-using Json.Path;
-using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json;
 
 namespace Bicep.Core.Extensions
 {
@@ -18,6 +18,7 @@ namespace Bicep.Core.Extensions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             ReadCommentHandling = JsonCommentHandling.Skip,
+            Converters = { new JsonStringEnumConverter() },
         };
 
         public static bool IsNotNullValue(this JsonElement element) => element.ValueKind is not JsonValueKind.Null;
@@ -25,17 +26,12 @@ namespace Bicep.Core.Extensions
         public static string ToNonNullString(this JsonElement element) =>
             element.GetString() ?? throw new JsonException($"Expected \"{element}\" to be non-null.");
 
+        [SuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Relying on references to required properties of the generic type elsewhere in the codebase.")]
         public static T ToNonNullObject<T>(this JsonElement element, JsonSerializerOptions? options = null)
         {
             options ??= DefaultDeserializeOptions;
 
-            var bufferWriter = new ArrayBufferWriter<byte>();
-            using (var writer = new Utf8JsonWriter(bufferWriter))
-            {
-                element.WriteTo(writer);
-            }
-
-            return JsonSerializer.Deserialize<T>(bufferWriter.WrittenSpan, options) ??
+            return JsonSerializer.Deserialize<T>(element, options) ??
                 throw new JsonException($"Expected deserialized value of \"{element}\" to be non-null.");
         }
 
@@ -83,36 +79,26 @@ namespace Bicep.Core.Extensions
             return element.Merge(valueElement);
         }
 
+        [SuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute'")]
         public static JsonElement Patch(this JsonElement element, params PatchOperation[] operations)
         {
             var patch = new JsonPatch(operations);
-            var patchResult = patch.Apply(element);
+            var patched = patch.Apply(element);
 
-            if (patchResult.IsSuccess)
-            {
-                return patchResult.Result;
-            }
-
-            throw new InvalidOperationException(patchResult.Error);
+            return patched;
         }
 
-        public static IEnumerable<JsonElement> Select(this JsonElement element, string jsonPathQuery)
+        public static string ToIndentedString(this JsonElement element)
         {
-            var jsonPath = JsonPath.Parse(jsonPathQuery);
-            var result = jsonPath.Evaluate(element);
+            var bufferWriter = new ArrayBufferWriter<byte>();
+            using var writer = new Utf8JsonWriter(bufferWriter, new JsonWriterOptions { Indented = true });
 
-            if (result.Error is string error)
-            {
-                throw new InvalidOperationException(error);
-            }
+            element.WriteTo(writer);
 
-            return result.Matches?.Select(match => match.Value) ?? Enumerable.Empty<JsonElement>();
+            writer.Flush();
+
+            return Encoding.UTF8.GetString(bufferWriter.WrittenSpan);
         }
-
-        public static string ToFormattedString(this JsonElement element) => JsonSerializer.Serialize(element, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-        });
 
         public static JsonElement Merge(this JsonElement element, JsonElement other)
         {
@@ -142,10 +128,10 @@ namespace Bicep.Core.Extensions
 
                     foreach (var propertyInFirst in first.EnumerateObject())
                     {
-                        if (second.TryGetProperty(propertyInFirst.Name, out var properyInSecondValue))
+                        if (second.TryGetProperty(propertyInFirst.Name, out var propertyInSecondValue))
                         {
                             writer.WritePropertyName(propertyInFirst.Name);
-                            Merge(propertyInFirst.Value, properyInSecondValue, writer);
+                            Merge(propertyInFirst.Value, propertyInSecondValue, writer);
                         }
                         else
                         {
@@ -171,5 +157,14 @@ namespace Bicep.Core.Extensions
         }
 
         private static string[] GetPropertyNames(string path) => path.Split('.');
+
+        public static ImmutableArray<string>? TryGetStringArray(this JsonElement element)
+        {
+            if (element.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+            return element.EnumerateArray().Select(x => x.GetString()).WhereNotNull().ToImmutableArray();
+        }
     }
 }

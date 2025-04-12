@@ -1,15 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Linq;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Parsing;
-using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
@@ -23,6 +18,8 @@ namespace Bicep.LangServer.IntegrationTests
     [TestClass]
     public class SnippetTemplatesTests
     {
+        private static ServiceBuilder Services => new ServiceBuilder().WithEmptyAzResources();
+
         [NotNull]
         public TestContext? TestContext { get; set; }
 
@@ -31,7 +28,7 @@ namespace Bicep.LangServer.IntegrationTests
         [TestCategory(BaselineHelper.BaselineTestCategory)]
         public void VerifySnippetTemplatesAreErrorFree(CompletionData completionData)
         {
-            string pathPrefix = $"Completions/SnippetTemplates/{completionData.Prefix}";
+            string pathPrefix = $"Files/SnippetTemplates/{completionData.Prefix}";
 
             var outputDirectory = FileHelper.SaveEmbeddedResourcesWithPathPrefix(TestContext, typeof(SnippetTemplatesTests).Assembly, pathPrefix);
 
@@ -53,14 +50,18 @@ namespace Bicep.LangServer.IntegrationTests
                     var requiredFile = PathHelper.FilePathToFileUrl(Path.Combine(outputDirectory, "REQUIRED"));
                     files.Add(requiredFile, @"{""definition"":{""$schema"":""https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#"",""contentVersion"":""1.0.0.0"",""outputs"":{}}}");
                     return;
+                case "res-scoped-lock":
+                    // This file cannot be directly compiled, because the snippet declares an extension resource without the resource being extended.
+                    // This is deliberate behavior.
+                    return;
             }
 
-            var compilation = new Compilation(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), SourceFileGroupingFactory.CreateForFiles(files, mainUri, BicepTestConstants.FileResolver, BicepTestConstants.BuiltInConfiguration), BicepTestConstants.BuiltInConfiguration, BicepTestConstants.LinterAnalyzer);
+            var compilation = Services.BuildCompilation(files, mainUri);
             var semanticModel = compilation.GetEntrypointSemanticModel();
 
             if (semanticModel.HasErrors())
             {
-                var errors = semanticModel.GetAllDiagnostics().Where(x => x.Level == DiagnosticLevel.Error);
+                var errors = semanticModel.GetAllDiagnostics().Where(x => x.IsError());
                 var sourceTextWithDiags = OutputHelper.AddDiagsToSourceText(bicepContents, "\n", errors, diag => OutputHelper.GetDiagLoggingString(bicepContents, outputDirectory, diag));
                 Assert.Fail("Template with prefix {0} contains errors. Please fix following errors:\n {1}", completionData.Prefix, sourceTextWithDiags);
             }

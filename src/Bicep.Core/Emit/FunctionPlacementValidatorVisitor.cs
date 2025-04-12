@@ -6,17 +6,15 @@ using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
 using Bicep.Core.Utils;
-using System;
-using System.Linq;
 
 namespace Bicep.Core.Emit
 {
-    public class FunctionPlacementValidatorVisitor : SyntaxVisitor
+    public class FunctionPlacementValidatorVisitor : AstVisitor
     {
         private enum VisitedElement
         {
             Module,
-            ModuleParams
+            ModuleParams,
         }
 
         private readonly SemanticModel semanticModel;
@@ -56,12 +54,12 @@ namespace Bicep.Core.Emit
 
         public override void VisitObjectPropertySyntax(ObjectPropertySyntax syntax)
         {
-            var vistingModuleParams = elementsRecorder.Contains(VisitedElement.Module)
+            var visitingModuleParams = elementsRecorder.Contains(VisitedElement.Module)
                 && !(elementsRecorder.TryPeek(out var head) && head == VisitedElement.ModuleParams)
                 && syntax.Key is IdentifierSyntax identifierSyntax
                 && string.Equals(identifierSyntax.IdentifierName, LanguageConstants.ModuleParamsPropertyName, LanguageConstants.IdentifierComparison);
 
-            using var _ = vistingModuleParams ? elementsRecorder.Scope(VisitedElement.ModuleParams) : null;
+            using var _ = visitingModuleParams ? elementsRecorder.Scope(VisitedElement.ModuleParams) : null;
             base.VisitObjectPropertySyntax(syntax);
 
         }
@@ -80,15 +78,26 @@ namespace Bicep.Core.Emit
 
         private void VerifyModuleSecureParameterFunctionPlacement(FunctionCallSyntaxBase syntax)
         {
-            if (semanticModel.GetSymbolInfo(syntax) is FunctionSymbol functionSymbol && functionSymbol.FunctionFlags.HasFlag(FunctionFlags.ModuleSecureParameterOnly))
+            if (semanticModel.GetSymbolInfo(syntax) is FunctionSymbol functionSymbol)
             {
-                // we can check placement only for funtions that were matched and has a proper placement flag
-                var (_, levelUpSymbol) = syntaxRecorder.Skip(1).FirstOrDefault();
-                if (!(elementsRecorder.TryPeek(out var head) && head == VisitedElement.ModuleParams)
-                    || levelUpSymbol is not PropertySymbol propertySymbol
-                    || !propertySymbol.Type.ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure))
+                if (functionSymbol.FunctionFlags.HasFlag(FunctionFlags.ModuleSecureParameterOnly))
                 {
-                    diagnosticWriter.Write(DiagnosticBuilder.ForPosition(syntax).FunctionOnlyValidInModuleSecureParameterAssignment(functionSymbol.Name));
+                    // we can check placement only for functions that were matched and has a proper placement flag
+                    var (_, levelUpSymbol) = syntaxRecorder.Skip(1).SkipWhile(x => x.syntax is TernaryOperationSyntax).FirstOrDefault();
+                    if (!(elementsRecorder.TryPeek(out var head) && head == VisitedElement.ModuleParams)
+                        || levelUpSymbol is not PropertySymbol propertySymbol
+                        || !(TypeHelper.TryRemoveNullability(propertySymbol.Type) ?? propertySymbol.Type).ValidationFlags.HasFlag(TypeSymbolValidationFlags.IsSecure))
+                    {
+                        diagnosticWriter.Write(DiagnosticBuilder.ForPosition(syntax).FunctionOnlyValidInModuleSecureParameterAssignment(functionSymbol.Name));
+                    }
+                }
+                if (functionSymbol.FunctionFlags.HasFlag(FunctionFlags.DirectAssignment))
+                {
+                    var (_, levelUpSymbol) = syntaxRecorder.Skip(1).SkipWhile(x => x.syntax is TernaryOperationSyntax).FirstOrDefault();
+                    if (levelUpSymbol is null)
+                    {
+                        diagnosticWriter.Write(DiagnosticBuilder.ForPosition(syntax).FunctionOnlyValidWithDirectAssignment(functionSymbol.Name));
+                    }
                 }
             }
         }

@@ -1,10 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
-using System.Linq;
+using Bicep.Core.Diagnostics;
 using Bicep.Core.Extensions;
 using Bicep.Core.Parsing;
 using Bicep.Core.PrettyPrint.Documents;
@@ -12,7 +10,7 @@ using Bicep.Core.Syntax;
 
 namespace Bicep.Core.PrettyPrint
 {
-    public class DocumentBuildVisitor : SyntaxVisitor
+    public class DocumentBuildVisitor : CstVisitor
     {
         private static readonly ILinkedDocument Nil = new NilDocument();
 
@@ -28,22 +26,37 @@ namespace Bicep.Core.PrettyPrint
 
         private static readonly ImmutableDictionary<string, TextDocument> CommonTextCache =
             LanguageConstants.ContextualKeywords
-            .Concat(LanguageConstants.Keywords.Keys)
-            .Concat(new[] { "(", ")", "[", "]", "{", "}", "=", ":", "+", "-", "*", "/", "!" })
-            .Concat(new[] { "name", "properties", "string", "bool", "int", "array", "object" })
+            .Concat(LanguageConstants.NonContextualKeywords.Keys)
+            .Concat(["(", ")", "[", "]", "{", "}", "=", ":", "+", "-", "*", "/", "!"])
+            .Concat(["name", "properties", "string", "bool", "int", "array", "object"])
             .ToImmutableDictionary(value => value, value => new TextDocument(value));
 
-        private readonly Stack<ILinkedDocument> documentStack = new Stack<ILinkedDocument>();
+        private readonly Stack<ILinkedDocument> documentStack = new();
 
-        private bool visitingBlockOpenSyntax;
+        private readonly IDiagnosticLookup lexingErrorLookup;
 
-        private bool visitingBlockCloseSyntax;
+        private readonly IDiagnosticLookup parsingErrorLookup;
 
         private bool visitingSkippedTriviaSyntax;
 
         private bool visitingBrokenStatement;
 
         private bool visitingComment;
+
+        private bool visitingLeadingTrivia;
+
+        private ILinkedDocument? LeadingDirectiveOrComments = null;
+
+        public DocumentBuildVisitor()
+            : this(EmptyDiagnosticLookup.Instance, EmptyDiagnosticLookup.Instance)
+        {
+        }
+
+        public DocumentBuildVisitor(IDiagnosticLookup lexingErrorLookup, IDiagnosticLookup parsingErrorLookup)
+        {
+            this.lexingErrorLookup = lexingErrorLookup;
+            this.parsingErrorLookup = parsingErrorLookup;
+        }
 
         public ILinkedDocument BuildDocument(SyntaxBase syntax)
         {
@@ -81,6 +94,28 @@ namespace Bicep.Core.PrettyPrint
                 this.Visit(syntax.Value);
             });
 
+        public override void VisitExtensionDeclarationSyntax(ExtensionDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.SpecificationString);
+                this.Visit(syntax.WithClause);
+                this.Visit(syntax.AsClause);
+            });
+
+        public override void VisitMetadataDeclarationSyntax(MetadataDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.Assignment);
+                this.Visit(syntax.Value);
+            });
+
         public override void VisitParameterDeclarationSyntax(ParameterDeclarationSyntax syntax) =>
             this.BuildStatement(syntax, () =>
             {
@@ -92,6 +127,25 @@ namespace Bicep.Core.PrettyPrint
                 this.Visit(syntax.Modifier);
             });
 
+        public override void VisitFunctionDeclarationSyntax(FunctionDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.Lambda);
+            }, children =>
+            {
+                var leadingNodes = children[0..^3];
+                var keyword = children[^3];
+                var name = children[^2];
+                var lambda = children[^1];
+
+                return Spread(
+                    Concat(leadingNodes.Concat(keyword)),
+                    Concat(name, lambda));
+            });
+
         public override void VisitVariableDeclarationSyntax(VariableDeclarationSyntax syntax) =>
             this.BuildStatement(syntax, () =>
             {
@@ -99,6 +153,7 @@ namespace Bicep.Core.PrettyPrint
                 this.Visit(syntax.Keyword);
                 this.documentStack.Push(Nil);
                 this.Visit(syntax.Name);
+                this.Visit(syntax.Type);
                 this.Visit(syntax.Assignment);
                 this.Visit(syntax.Value);
             });
@@ -128,6 +183,18 @@ namespace Bicep.Core.PrettyPrint
                 this.Visit(syntax.Value);
             });
 
+        public override void VisitTestDeclarationSyntax(TestDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.Path);
+                this.Visit(syntax.Assignment);
+                this.Visit(syntax.Value);
+            });
+
         public override void VisitOutputDeclarationSyntax(OutputDeclarationSyntax syntax) =>
             this.BuildStatement(syntax, () =>
             {
@@ -138,6 +205,37 @@ namespace Bicep.Core.PrettyPrint
                 this.Visit(syntax.Type);
                 this.Visit(syntax.Assignment);
                 this.Visit(syntax.Value);
+            });
+
+        public override void VisitAssertDeclarationSyntax(AssertDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.Assignment);
+                this.Visit(syntax.Value);
+            });
+
+        public override void VisitParameterAssignmentSyntax(ParameterAssignmentSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.Assignment);
+                this.Visit(syntax.Value);
+            });
+
+        public override void VisitUsingDeclarationSyntax(UsingDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.Path);
             });
 
         public override void VisitTernaryOperationSyntax(TernaryOperationSyntax syntax) =>
@@ -164,63 +262,192 @@ namespace Bicep.Core.PrettyPrint
         public override void VisitIfConditionSyntax(IfConditionSyntax syntax) =>
             this.BuildWithSpread(() => base.VisitIfConditionSyntax(syntax));
 
-        public override void VisitForSyntax(ForSyntax syntax) =>
-            this.Build(() => base.VisitForSyntax(syntax), children =>
+        public override void VisitForSyntax(ForSyntax syntax)
+        {
+            this.Build(
+            () =>
             {
-                Debug.Assert(children.Length == 8);
+                this.Visit(syntax.OpenSquare);
+                this.VisitNodes(syntax.OpenNewlines);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.ForKeyword);
+                this.Visit(syntax.VariableSection);
+                this.Visit(syntax.InKeyword);
+                this.Visit(syntax.Expression);
+                this.Visit(syntax.Colon);
+                this.Visit(syntax.Body);
+                this.documentStack.Push(Nil);
+                this.VisitNodes(syntax.CloseNewlines);
+                this.Visit(syntax.CloseSquare);
+            },
+            children =>
+            {
+                var firstNilIndex = Array.IndexOf(children, Nil);
+                var lastNilIndex = Array.LastIndexOf(children, Nil);
 
                 ILinkedDocument openBracket = children[0];
-                ILinkedDocument forKeyword = children[1];
-                ILinkedDocument variableBlock = children[2];
-                ILinkedDocument inKeyword = children[3];
-                ILinkedDocument arrayExpression = children[4];
-                ILinkedDocument colon = children[5];
-                ILinkedDocument loopBody = children[6];
-                ILinkedDocument closeBracket = children[7];
+                var openNewlines = children[1..firstNilIndex];
 
-                return Concat(openBracket, Spread(forKeyword, variableBlock, inKeyword, arrayExpression), Spread(colon, loopBody), closeBracket);
+                var closeNewlines = children[(lastNilIndex + 1)..^1];
+                ILinkedDocument closeBracket = children[^1];
+
+                var bracketEnclosed = children[(firstNilIndex + 1)..lastNilIndex];
+                ILinkedDocument forKeyword = bracketEnclosed[0];
+                ILinkedDocument variableBlock = bracketEnclosed[1];
+                ILinkedDocument inKeyword = bracketEnclosed[2];
+                ILinkedDocument arrayExpression = bracketEnclosed[3];
+                ILinkedDocument colon = bracketEnclosed[4];
+                ILinkedDocument loopBody = bracketEnclosed[5];
+
+                var documentsToConcat = new List<ILinkedDocument> { openBracket };
+                documentsToConcat.AddRange(openNewlines);
+                documentsToConcat.Add(Spread(forKeyword, variableBlock, inKeyword, arrayExpression));
+                documentsToConcat.Add(Spread(colon, loopBody));
+                documentsToConcat.AddRange(closeNewlines);
+                documentsToConcat.Add(closeBracket);
+
+                return Concat(documentsToConcat);
+            });
+        }
+
+        public override void VisitVariableBlockSyntax(VariableBlockSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.OpenParen);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: false);
+                this.Visit(syntax.CloseParen);
             });
 
-        public override void VisitForVariableBlockSyntax(ForVariableBlockSyntax syntax) =>
-            this.Build(() => base.VisitForVariableBlockSyntax(syntax), children =>
-             {
-                 Debug.Assert(children.Length == 5);
+        public override void VisitTypedVariableBlockSyntax(TypedVariableBlockSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.OpenParen);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: false);
+                this.Visit(syntax.CloseParen);
+            });
 
-                 ILinkedDocument openParen = children[0];
-                 ILinkedDocument itemVariable = children[1];
-                 ILinkedDocument comma = children[2];
-                 ILinkedDocument indexVariable = children[3];
-                 ILinkedDocument closeParen = children[4];
+        public override void VisitTypedLocalVariableSyntax(TypedLocalVariableSyntax syntax) =>
+            this.BuildWithSpread(() => base.VisitTypedLocalVariableSyntax(syntax));
 
-                 return Spread(Concat(openParen, itemVariable, comma), Concat(indexVariable, closeParen));
-             });
+        public override void VisitLambdaSyntax(LambdaSyntax syntax) =>
+            this.BuildWithSpread(() => base.VisitLambdaSyntax(syntax));
+
+        public override void VisitTypedLambdaSyntax(TypedLambdaSyntax syntax) =>
+            this.BuildWithSpread(() => base.VisitTypedLambdaSyntax(syntax));
+
+        private void VisitCommaAndNewLineSeparated(ImmutableArray<SyntaxBase> nodes, bool leadingAndTrailingSpace)
+        {
+            if (nodes.Length == 1 && nodes[0] is Token { Type: TokenType.NewLine })
+            {
+                this.Build(() => this.Visit(nodes[0]), children =>
+                {
+                    if (children.Length == 1)
+                    {
+                        if (children[0] == Line || children[0] == SingleLine || children[0] == DoubleLine)
+                        {
+                            return Nil;
+                        }
+
+                        // Trailing comment.
+                        return children[0];
+                    }
+
+                    return new NestDocument(1, [.. children]);
+                });
+                return;
+            }
+
+            SyntaxBase? leadingNewLine = null;
+            if (nodes.Length > 0 && nodes[0] is Token { Type: TokenType.NewLine })
+            {
+                leadingNewLine = nodes[0];
+                nodes = nodes.RemoveAt(0);
+            }
+
+            SyntaxBase? trailingNewLine = null;
+            if (nodes.Length > 0 && nodes[^1] is Token { Type: TokenType.NewLine })
+            {
+                trailingNewLine = nodes[^1];
+                nodes = nodes.RemoveAt(nodes.Length - 1);
+            }
+
+            this.Build(() =>
+            {
+                this.Visit(leadingNewLine);
+                if (leadingAndTrailingSpace && nodes.Any() && leadingNewLine is null)
+                {
+                    this.PushDocument(Space);
+                }
+
+                for (var i = 0; i < nodes.Length; i++)
+                {
+                    var visitingBrokenStatement = this.visitingBrokenStatement;
+
+                    if (this.HasSyntaxError(nodes[i]))
+                    {
+                        this.visitingBrokenStatement = true;
+                    }
+
+                    this.Visit(nodes[i]);
+
+                    if (!this.visitingBrokenStatement)
+                    {
+                        if (i < nodes.Length - 1 &&
+                            nodes[i] is Token { Type: TokenType.Comma } &&
+                            nodes[i + 1] is not Token { Type: TokenType.NewLine })
+                        {
+                            this.PushDocument(Space);
+                        }
+                    }
+
+                    this.visitingBrokenStatement = visitingBrokenStatement;
+                }
+
+                if (leadingAndTrailingSpace && nodes.Any() && trailingNewLine is null)
+                {
+                    this.PushDocument(Space);
+                }
+                this.Visit(trailingNewLine);
+            }, children =>
+            {
+                // This logic ensures that syntax with only a single child is not doubly-nested,
+                // and that the final newline does not cause the next piece of text to be indented
+                // e.g. 'bar' in the following is only indented once, and '})' is not indented:
+                //   foo({
+                //     bar: 123
+                //   })
+                var hasTrailingNewline = trailingNewLine is not null;
+                var nestedChildren = Concat(hasTrailingNewline ? children[..^1] : children);
+                var newLine = hasTrailingNewline ? children[^1] : Nil;
+
+                // Do not call Nest() if we are inside a broken statement, otherwise it will keep on indenting further when the user formats document.
+                if (!this.visitingBrokenStatement && children.Length > 1)
+                {
+                    nestedChildren = nestedChildren.Nest();
+                }
+
+                return Concat(nestedChildren, newLine);
+            });
+        }
 
         public override void VisitFunctionCallSyntax(FunctionCallSyntax syntax) =>
-            this.Build(() => base.VisitFunctionCallSyntax(syntax), children =>
+            this.BuildWithConcat(() =>
             {
-                Debug.Assert(children.Length >= 3);
-
-                ILinkedDocument name = children[0];
-                ILinkedDocument openParen = children[1];
-                ILinkedDocument arguments = Spread(children.Skip(2).SkipLast(1));
-                ILinkedDocument closeParen = children[^1];
-
-                return Concat(name, openParen, arguments, closeParen);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.OpenParen);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: false);
+                this.Visit(syntax.CloseParen);
             });
 
         public override void VisitInstanceFunctionCallSyntax(InstanceFunctionCallSyntax syntax) =>
-            this.Build(() => base.VisitInstanceFunctionCallSyntax(syntax), children =>
+            this.BuildWithConcat(() =>
             {
-                Debug.Assert(children.Length >= 5);
-
-                ILinkedDocument baseExpression = children[0];
-                ILinkedDocument dot = children[1];
-                ILinkedDocument name = children[2];
-                ILinkedDocument openParen = children[3];
-                ILinkedDocument arguments = Spread(children.Skip(4).SkipLast(1));
-                ILinkedDocument closeParen = children[^1];
-
-                return Concat(baseExpression, dot, name, openParen, arguments, closeParen);
+                this.Visit(syntax.BaseExpression);
+                this.Visit(syntax.Dot);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.OpenParen);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: false);
+                this.Visit(syntax.CloseParen);
             });
 
         public override void VisitFunctionArgumentSyntax(FunctionArgumentSyntax syntax) =>
@@ -256,7 +483,9 @@ namespace Bicep.Core.PrettyPrint
         {
             foreach (var trivia in token.LeadingTrivia)
             {
+                this.visitingLeadingTrivia = true;
                 this.VisitSyntaxTrivia(trivia);
+                this.visitingLeadingTrivia = false;
             }
 
             var pushDocument = this.visitingBrokenStatement
@@ -265,6 +494,11 @@ namespace Bicep.Core.PrettyPrint
 
             if (token.Type == TokenType.NewLine)
             {
+                if (this.LeadingDirectiveOrComments is not null)
+                {
+                    pushDocument(this.LeadingDirectiveOrComments);
+                }
+
                 int newlineCount = StringUtils.CountNewlines(token.Text);
 
                 for (int i = 0; i < newlineCount; i++)
@@ -272,10 +506,27 @@ namespace Bicep.Core.PrettyPrint
                     pushDocument(Line);
                 }
             }
+            else if (token.Type == TokenType.EndOfFile)
+            {
+                if (this.LeadingDirectiveOrComments is not null)
+                {
+                    pushDocument(SingleLine);
+                    pushDocument(this.LeadingDirectiveOrComments);
+                }
+            }
             else
             {
-                pushDocument(Text(token.Text));
+                if (this.LeadingDirectiveOrComments is not null)
+                {
+                    pushDocument(Concat(this.LeadingDirectiveOrComments, Space, Text(token.Text)));
+                }
+                else
+                {
+                    pushDocument(Text(token.Text));
+                }
             }
+
+            this.LeadingDirectiveOrComments = null;
 
             foreach (var trivia in token.TrailingTrivia)
             {
@@ -308,28 +559,31 @@ namespace Bicep.Core.PrettyPrint
 
             if (syntaxTrivia.Type == SyntaxTriviaType.DisableNextLineDiagnosticsDirective)
             {
-                this.PushDocument(Text(syntaxTrivia.Text));
+                if (this.LeadingDirectiveOrComments is null)
+                {
+                    this.LeadingDirectiveOrComments = Text(syntaxTrivia.Text);
+                }
+                else
+                {
+                    this.LeadingDirectiveOrComments = Concat(this.LeadingDirectiveOrComments, Space, Text(syntaxTrivia.Text));
+                }
             }
         }
 
         public override void VisitObjectSyntax(ObjectSyntax syntax) =>
-            this.BuildBlock(() =>
+            this.BuildWithConcat(() =>
             {
-                this.visitingBlockOpenSyntax = true;
                 this.Visit(syntax.OpenBrace);
-                this.visitingBlockOpenSyntax = false;
-
-                this.VisitNodes(syntax.Children);
-
-                this.visitingBlockCloseSyntax = true;
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: true);
                 this.Visit(syntax.CloseBrace);
-                this.visitingBlockCloseSyntax = false;
             });
 
         public override void VisitObjectPropertySyntax(ObjectPropertySyntax syntax) =>
             this.Build(() => base.VisitObjectPropertySyntax(syntax), children =>
             {
-                Debug.Assert(children.Length == 3);
+                // When a property value is an unterminated string, there can be more than
+                // 3 children.
+                Debug.Assert(children.Length >= 3);
 
                 ILinkedDocument key = children[0];
                 ILinkedDocument colon = children[1];
@@ -339,18 +593,201 @@ namespace Bicep.Core.PrettyPrint
             });
 
         public override void VisitArraySyntax(ArraySyntax syntax) =>
-            this.BuildBlock(() =>
+            this.BuildWithConcat(() =>
             {
-                this.visitingBlockOpenSyntax = true;
                 this.Visit(syntax.OpenBracket);
-                this.visitingBlockOpenSyntax = false;
-
-                this.VisitNodes(syntax.Children);
-
-                this.visitingBlockCloseSyntax = true;
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: true);
                 this.Visit(syntax.CloseBracket);
-                this.visitingBlockCloseSyntax = false;
             });
+
+        public override void VisitTypeDeclarationSyntax(TypeDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.Assignment);
+                this.Visit(syntax.Value);
+            });
+
+        public override void VisitArrayTypeSyntax(ArrayTypeSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.Item);
+                this.Visit(syntax.OpenBracket);
+                this.Visit(syntax.CloseBracket);
+            });
+
+        public override void VisitObjectTypeSyntax(ObjectTypeSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.OpenBrace);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: true);
+                this.Visit(syntax.CloseBrace);
+            });
+
+        public override void VisitObjectTypePropertySyntax(ObjectTypePropertySyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Key);
+                this.Visit(syntax.Colon);
+                this.documentStack.Push(Space);
+                this.Visit(syntax.Value);
+            });
+
+        public override void VisitObjectTypeAdditionalPropertiesSyntax(ObjectTypeAdditionalPropertiesSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Asterisk);
+                this.Visit(syntax.Colon);
+                this.documentStack.Push(Space);
+                this.Visit(syntax.Value);
+            });
+
+        public override void VisitTupleTypeSyntax(TupleTypeSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.OpenBracket);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: true);
+                this.Visit(syntax.CloseBracket);
+            });
+
+        public override void VisitTupleTypeItemSyntax(TupleTypeItemSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Value);
+            });
+
+        public override void VisitUnionTypeSyntax(UnionTypeSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                int stackTare = documentStack.Count;
+                var firstLineWritten = false;
+
+                void AggregateCurrentLine()
+                {
+                    LinkedList<ILinkedDocument> currentLineDocs = new();
+                    while (documentStack.Count > stackTare)
+                    {
+                        currentLineDocs.AddFirst(documentStack.Pop());
+                    }
+
+                    var line = Spread(currentLineDocs);
+                    this.PushDocument(firstLineWritten ? new NestDocument(1, [line]) : line);
+                    firstLineWritten = true;
+                    stackTare++;
+                }
+
+                for (int i = 0; i < syntax.Children.Length; i++)
+                {
+                    if (syntax.Children[i] is Token { Type: TokenType.NewLine })
+                    {
+                        AggregateCurrentLine();
+                    }
+                    else
+                    {
+                        this.Visit(syntax.Children[i]);
+                    }
+                }
+
+                AggregateCurrentLine();
+            });
+
+        public override void VisitNonNullAssertionSyntax(NonNullAssertionSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.BaseExpression);
+                this.Visit(syntax.AssertionOperator);
+            });
+
+        public override void VisitNullableTypeSyntax(NullableTypeSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.Base);
+                this.Visit(syntax.NullabilityMarker);
+            });
+
+        public override void VisitCompileTimeImportDeclarationSyntax(CompileTimeImportDeclarationSyntax syntax) =>
+            this.BuildStatement(syntax, () =>
+            {
+                this.VisitNodes(syntax.LeadingNodes);
+                this.Visit(syntax.Keyword);
+                this.documentStack.Push(Nil);
+                this.Visit(syntax.ImportExpression);
+                this.Visit(syntax.FromClause);
+            });
+
+        public override void VisitImportedSymbolsListSyntax(ImportedSymbolsListSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.OpenBrace);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: true);
+                this.Visit(syntax.CloseBrace);
+            });
+
+        public override void VisitImportedSymbolsListItemSyntax(ImportedSymbolsListItemSyntax syntax) =>
+            this.BuildWithSpread(() =>
+            {
+                this.Visit(syntax.OriginalSymbolName);
+                this.Visit(syntax.AsClause);
+            });
+
+        public override void VisitAliasAsClauseSyntax(AliasAsClauseSyntax syntax) =>
+            this.BuildWithSpread(() =>
+            {
+                this.Visit(syntax.Keyword);
+                this.Visit(syntax.Alias);
+            });
+
+        public override void VisitWildcardImportSyntax(WildcardImportSyntax syntax) =>
+            this.BuildWithSpread(() =>
+            {
+                this.Visit(syntax.Wildcard);
+                this.Visit(syntax.AliasAsClause);
+            });
+
+        public override void VisitCompileTimeImportFromClauseSyntax(CompileTimeImportFromClauseSyntax syntax) =>
+            this.BuildWithSpread(() =>
+            {
+                this.Visit(syntax.Keyword);
+                this.Visit(syntax.Path);
+            });
+
+        public override void VisitParameterizedTypeInstantiationSyntax(ParameterizedTypeInstantiationSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.Name);
+                this.Visit(syntax.OpenChevron);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: false);
+                this.Visit(syntax.CloseChevron);
+            });
+
+        public override void VisitInstanceParameterizedTypeInstantiationSyntax(InstanceParameterizedTypeInstantiationSyntax syntax) =>
+            this.BuildWithConcat(() =>
+            {
+                this.Visit(syntax.BaseExpression);
+                this.Visit(syntax.Dot);
+                this.Visit(syntax.Name);
+                this.Visit(syntax.OpenChevron);
+                this.VisitCommaAndNewLineSeparated(syntax.Children, leadingAndTrailingSpace: false);
+                this.Visit(syntax.CloseChevron);
+            });
+
+        public override void VisitTypePropertyAccessSyntax(TypePropertyAccessSyntax syntax) =>
+            this.BuildWithConcat(() => base.VisitTypePropertyAccessSyntax(syntax));
+
+        public override void VisitTypeAdditionalPropertiesAccessSyntax(TypeAdditionalPropertiesAccessSyntax syntax) =>
+            this.BuildWithConcat(() => base.VisitTypeAdditionalPropertiesAccessSyntax(syntax));
+
+        public override void VisitTypeArrayAccessSyntax(TypeArrayAccessSyntax syntax)
+            => this.BuildWithConcat(() => base.VisitTypeArrayAccessSyntax(syntax));
+
+        public override void VisitTypeItemsAccessSyntax(TypeItemsAccessSyntax syntax)
+            => this.BuildWithConcat(() => base.VisitTypeItemsAccessSyntax(syntax));
 
         private static ILinkedDocument Text(string text) =>
             CommonTextCache.TryGetValue(text, out var cached) ? cached : new TextDocument(text);
@@ -365,48 +802,38 @@ namespace Bicep.Core.PrettyPrint
             Spread(combinators as IEnumerable<ILinkedDocument>);
 
         private static ILinkedDocument Spread(IEnumerable<ILinkedDocument> combinators) =>
-            combinators.Any() ? combinators.Aggregate((a, b) => a.Concat(Space).Concat(b)) : Nil;
+            combinators.DefaultIfEmpty(Nil).Aggregate((a, b) => a.Concat(Space).Concat(b));
 
         private void BuildWithConcat(Action visitAciton) => this.Build(visitAciton, Concat);
 
         private void BuildWithSpread(Action visitAciton) => this.Build(visitAciton, Spread);
 
-        private void BuildBlock(Action visitAction) =>
-            this.Build(visitAction, children =>
-            {
-                Debug.Assert(children.Length >= 2);
-
-                ILinkedDocument openSymbol = children[0];
-                ILinkedDocument body = Concat(children.Skip(1).SkipLast(2)).Nest();
-                ILinkedDocument lastLine = children.Length > 2 ? children[^2] : Nil;
-                ILinkedDocument closeSymbol = children[^1];
-
-                return Concat(openSymbol, body, lastLine, closeSymbol);
-            });
-
-        private void BuildStatement(SyntaxBase syntax, Action visitAction)
+        private void BuildStatement(SyntaxBase syntax, Action visitAction, Func<ILinkedDocument[], ILinkedDocument> buildFunc)
         {
-            if (syntax.GetParseDiagnostics().Count > 0)
+            if (this.HasSyntaxError(syntax))
             {
                 this.visitingBrokenStatement = true;
                 visitAction();
                 this.visitingBrokenStatement = false;
 
-                // Everyting left on the stack will be concatenated by the top level Concat rule defined in VisitProgram.
+                // Everything left on the stack will be concatenated by the top level Concat rule defined in VisitProgram.
                 return;
             }
 
-            this.Build(visitAction, children =>
+            this.Build(visitAction, buildFunc);
+        }
+
+        private void BuildStatement(SyntaxBase syntax, Action visitAction)
+            => BuildStatement(syntax, visitAction, children =>
             {
                 var splitIndex = Array.IndexOf(children, Nil);
 
-                // Need to concat leading decorators and the statment keyword.
+                // Need to concat leading decorators and the statement keyword.
                 var head = Concat(children.Take(splitIndex));
                 var tail = children.Skip(splitIndex + 1);
 
                 return Spread(head.AsEnumerable().Concat(tail));
             });
-        }
 
         private void Build(Action visitAction, Func<ILinkedDocument[], ILinkedDocument> buildFunc)
         {
@@ -488,30 +915,34 @@ namespace Bicep.Core.PrettyPrint
 
                 this.documentStack.Push(document);
             }
+            else if (this.visitingComment && this.visitingLeadingTrivia)
+            {
+                if (this.LeadingDirectiveOrComments is null)
+                {
+                    this.LeadingDirectiveOrComments = document;
+                }
+                else
+                {
+                    this.LeadingDirectiveOrComments = Concat(this.LeadingDirectiveOrComments, Space, document);
+                }
+            }
             else if (visitingComment)
             {
-                // Add a space before the comment if it's not at the begining of the file or after a newline.
+                // Add a space before the comment if it's not at the beginning of the file or after a newline.
                 ILinkedDocument gap = top != NoLine && top != Line && top != SingleLine && top != DoubleLine ? Space : Nil;
 
                 // Combine the comment and the document at the top of the stack. This is the key to simplify VisitToken.
+
                 this.documentStack.Push(Concat(this.documentStack.Pop(), gap, document));
             }
             else
             {
-                if (this.visitingBlockCloseSyntax)
-                {
-                    // Insert a SingleLine before "}" and "]", which will remove extra newlines before it (by calling PushDocument).
-                    this.PushDocument(SingleLine);
-                }
-
                 this.documentStack.Push(document);
-
-                if (this.visitingBlockOpenSyntax)
-                {
-                    // Add a SingleLine after "{" and "[", which will prevent more newlines from being added after it.
-                    this.documentStack.Push(SingleLine);
-                }
             }
         }
+
+        private bool HasSyntaxError(SyntaxBase syntax) =>
+            this.lexingErrorLookup.Contains(syntax) ||
+            this.parsingErrorLookup.Contains(syntax);
     }
 }

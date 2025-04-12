@@ -1,11 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using Bicep.RegistryModuleTool.Exceptions;
+using System.IO.Abstractions;
 using Bicep.RegistryModuleTool.ModuleFiles;
 using Microsoft.Extensions.Logging;
-using System.IO;
-using System.IO.Abstractions;
 
 namespace Bicep.RegistryModuleTool.ModuleFileValidators
 {
@@ -15,48 +13,52 @@ namespace Bicep.RegistryModuleTool.ModuleFileValidators
 
         private readonly ILogger logger;
 
-        private readonly MainArmTemplateFile latestMainArmTemplateFile;
+        private readonly MainBicepFile mainBicepFile;
 
-        public DiffValidator(IFileSystem fileSystem, ILogger logger, MainArmTemplateFile latestMainArmTemplateFile)
+        public DiffValidator(IFileSystem fileSystem, ILogger logger, MainBicepFile mainBicepFile)
         {
             this.fileSystem = fileSystem;
             this.logger = logger;
-            this.latestMainArmTemplateFile = latestMainArmTemplateFile;
+            this.mainBicepFile = mainBicepFile;
         }
 
-        public void Validate(MainArmTemplateFile file) => this.Validate(file.Path, file.Content, latestMainArmTemplateFile.Content);
-
-        public void Validate(ReadmeFile file)
+        public async Task<IEnumerable<string>> ValidateAsync(MainArmTemplateFile file)
         {
-            var latestMetadataFile = MetadataFile.ReadFromFileSystem(this.fileSystem);
-            var latestReadmeFile = ReadmeFile.Generate(this.fileSystem, latestMetadataFile, latestMainArmTemplateFile);
+            var latestMainArmTemplateFile = await MainArmTemplateFile.GenerateAsync(this.fileSystem, this.mainBicepFile);
 
-            this.Validate(file.Path, file.Contents, latestReadmeFile.Contents);
+            return this.Validate(file.Path, file.Content, latestMainArmTemplateFile.Content);
         }
 
-        public void Validate(VersionFile file)
+        public async Task<IEnumerable<string>> ValidateAsync(ReadmeFile file)
         {
-            var latestVersionFile = VersionFile.Generate(this.fileSystem);
+            var latestReadmeFile = await ReadmeFile.GenerateAsync(this.fileSystem, this.mainBicepFile);
 
-            this.Validate(file.Path, file.Contents, latestVersionFile.Contents);
+            return this.Validate(file.Path, file.Contents, latestReadmeFile.Contents);
         }
 
-        private void Validate(string filePath, string newContent, string oldContent)
+        public async Task<IEnumerable<string>> ValidateAsync(VersionFile file)
         {
-            this.logger.LogInformation("Making sure the content of \"{FilePath}\" is up-to-date...", filePath);
+            var latestVersionFile = await VersionFile.GenerateAsync(this.fileSystem);
 
-            if (DiffLines(newContent, oldContent))
+            return this.Validate(file.Path, file.Contents, latestVersionFile.Contents);
+        }
+
+        private IEnumerable<string> Validate(string filePath, string newContents, string oldContents)
+        {
+            this.logger.LogInformation("Making sure the content of \"{FilePath}\" is up to date...", filePath);
+
+            if (DiffLines(newContents, oldContents))
             {
-                throw new InvalidModuleException($"The file \"{filePath}\" is modified or outdated. Please regenerate the file to fix it.");
+                yield return @$"The file is modified or outdated. Please run ""brm generate"" to regenerate it.";
             }
         }
 
-        private static bool DiffLines(string newContent, string oldContent)
+        private static bool DiffLines(string newContents, string oldContents)
         {
             // Ignores newline and trailing newline differences in case users
             // have different formatting settings.
-            using var newContentReader = new StringReader(newContent);
-            using var oldContentReader = new StringReader(oldContent);
+            using var newContentReader = new StringReader(newContents);
+            using var oldContentReader = new StringReader(oldContents);
 
             var newContentLine = newContentReader.ReadLine();
             var oldContentLine = oldContentReader.ReadLine();

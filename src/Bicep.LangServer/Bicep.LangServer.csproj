@@ -3,19 +3,29 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Bicep.LanguageServer</RootNamespace>
+    <!-- generates a NOTICE file in the publish output using our custom targets -->
+    <EnableNoticeInPublishOutput>true</EnableNoticeInPublishOutput>
+    <!-- Disable CS1591 Missing XML comment for publicly visible type or member for generated code -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Bicep.Core\Bicep.Core.csproj" />
+    <ProjectReference Include="..\Bicep.Decompiler\Bicep.Decompiler.csproj" />
+    <ProjectReference Include="../Bicep.Local.Deploy/Bicep.Local.Deploy.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="OmniSharp.Extensions.LanguageServer" Version="0.19.5" />
-    <PackageReference Include="CommandLineParser" Version="2.8.0" />
+    <PackageReference Include="Azure.ResourceManager.ResourceGraph" Version="1.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+    <PackageReference Include="OmniSharp.Extensions.LanguageServer" Version="0.19.9" />
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="SharpYaml" Version="2.1.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="./Snippets/Templates/*.bicep" LogicalName="$([System.String]::new('Snippets/Templates/%(RecursiveDir)%(Filename)%(Extension)').Replace('\', '/'))" />
+    <None Remove="./Files/**/*.*" />
+    <EmbeddedResource Include="./Files/**/*.*" LogicalName="$([System.String]::new('Files/%(RecursiveDir)%(Filename)%(Extension)').Replace('\', '/'))" WithCulture="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +44,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="Nerdbank.GitVersioning" Version="3.4.255" />
+    <PackageReference Update="Nerdbank.GitVersioning" Version="3.7.112" />
   </ItemGroup>
 </Project>

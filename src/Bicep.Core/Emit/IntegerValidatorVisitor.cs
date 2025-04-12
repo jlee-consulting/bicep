@@ -2,24 +2,27 @@
 // Licensed under the MIT License.
 
 using Bicep.Core.Diagnostics;
+using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
 
 namespace Bicep.Core.Emit
 {
-    public class IntegerValidatorVisitor : SyntaxVisitor
+    public class IntegerValidatorVisitor : AstVisitor
     {
         private readonly IDiagnosticWriter diagnosticWriter;
+        private readonly SemanticModel semanticModel;
 
-        private IntegerValidatorVisitor(IDiagnosticWriter diagnosticWriter)
+        private IntegerValidatorVisitor(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter)
         {
             this.diagnosticWriter = diagnosticWriter;
+            this.semanticModel = semanticModel;
         }
 
-        public static void Validate(ProgramSyntax programSyntax, IDiagnosticWriter diagnosticWriter)
+        public static void Validate(SemanticModel semanticModel, IDiagnosticWriter diagnosticWriter)
         {
-            var visitor = new IntegerValidatorVisitor(diagnosticWriter);
+            var visitor = new IntegerValidatorVisitor(semanticModel, diagnosticWriter);
             // visiting writes diagnostics in some cases
-            visitor.Visit(programSyntax);
+            visitor.Visit(semanticModel.SourceFile.ProgramSyntax);
         }
 
         public override void VisitIntegerLiteralSyntax(IntegerLiteralSyntax syntax)

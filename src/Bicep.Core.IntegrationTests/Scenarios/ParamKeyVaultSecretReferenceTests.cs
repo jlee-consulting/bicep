@@ -1,11 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using Bicep.Core.UnitTests.Assertions;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using FluentAssertions;
-using Bicep.Core.UnitTests.Utils;
-using FluentAssertions.Execution;
 using Bicep.Core.Diagnostics;
+using Bicep.Core.UnitTests.Assertions;
+using Bicep.Core.UnitTests.Utils;
+using FluentAssertions;
+using FluentAssertions.Execution;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
 
 namespace Bicep.Core.IntegrationTests.Scenarios
 {
@@ -18,24 +19,21 @@ namespace Bicep.Core.IntegrationTests.Scenarios
         {
             var (template, diags, _) = CompilationHelper.Compile(
                 ("main.bicep", @"
-resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
-  name: 'testkeyvault'
-}
+                    resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+                      name: 'testkeyvault'
+                    }
 
-
-module secret 'secret.bicep' = {
-  name: 'secret'
-  params: {
-    mySecret: kv.getSecret('mySecret')
-  }
-}
-"),
+                    module secret 'secret.bicep' = {
+                      name: 'secret'
+                      params: {
+                        mySecret: kv.getSecret('mySecret')
+                      }
+                    }
+                "),
                 ("secret.bicep", @"
-@secure()
-param mySecret string
-
-output exposed string = mySecret
-"));
+                    @secure()
+                    param mySecret string
+                "));
 
             diags.Should().BeEmpty();
             template!.Should().NotBeNull();
@@ -54,23 +52,21 @@ output exposed string = mySecret
         {
             var (template, diags, _) = CompilationHelper.Compile(
                 ("main.bicep", @"
-resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
-  name: 'testkeyvault'
-}
+                    resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+                      name: 'testkeyvault'
+                    }
 
-module secret 'secret.bicep' = {
-  name: 'secret'
-  params: {
-    mySecret: kv.getSecret('mySecret','secretversionguid')
-  }
-}
-"),
+                    module secret 'secret.bicep' = {
+                      name: 'secret'
+                      params: {
+                        mySecret: kv.getSecret('mySecret','secretversionguid')
+                      }
+                    }
+                "),
                 ("secret.bicep", @"
-@secure()
-param mySecret string = 'defaultSecret'
-
-output exposed string = mySecret
-"));
+                    @secure()
+                    param mySecret string = 'defaultSecret'
+                "));
 
             diags.Should().BeEmpty();
             template!.Should().NotBeNull();
@@ -223,33 +219,31 @@ param testParam array
         {
             var (template, diags, _) = CompilationHelper.Compile(
                 ("main.bicep", @"
-resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
-  name: 'testkeyvault'
-}
-var secrets = [
-{
-  name: 'secret01'
-  version: 'versionA'
-}
-{
-  name: 'secret02'
-  version: 'versionB'
-}
-]
-module secret 'secret.bicep' = [for (secret, i) in secrets : {
-  name: 'secret'
-  scope: resourceGroup('secret-${i}-rg')
-  params: {
-    mySecret: kv.getSecret('super-${secret.name}', secret.version)
-  }
-}]
-"),
+                    resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+                      name: 'testkeyvault'
+                    }
+                    var secrets = [
+                    {
+                      name: 'secret01'
+                      version: 'versionA'
+                    }
+                    {
+                      name: 'secret02'
+                      version: 'versionB'
+                    }
+                    ]
+                    module secret 'secret.bicep' = [for (secret, i) in secrets : {
+                      name: 'secret'
+                      scope: resourceGroup('secret-${i}-rg')
+                      params: {
+                        mySecret: kv.getSecret('super-${secret.name}', secret.version)
+                      }
+                    }]
+                "),
                 ("secret.bicep", @"
-@secure()
-param mySecret string = 'defaultSecret'
-
-output exposed string = mySecret
-"));
+                    @secure()
+                    param mySecret string = 'defaultSecret'
+                "));
 
             diags.Should().BeEmpty();
             template!.Should().NotBeNull();
@@ -307,42 +301,40 @@ output exposed string = mySecret
         {
             var (template, diags, _) = CompilationHelper.Compile(
                 ("main.bicep", @"
-var secrets = [
-{
-  name: 'secret01'
-  version: 'versionA'
-  vaultName: 'test-1-kv'
-  vaultRG: 'test-1-rg'
-  vaultSub: 'abcd-efgh'
-}
-{
-  name: 'secret02'
-  version: 'versionB'
-  vaultName: 'test-2-kv'
-  vaultRG: 'test-2-rg'
-  vaultSub: 'ijkl-1adg1'
-}
-]
+                    var secrets = [
+                    {
+                      name: 'secret01'
+                      version: 'versionA'
+                      vaultName: 'test-1-kv'
+                      vaultRG: 'test-1-rg'
+                      vaultSub: 'abcd-efgh'
+                    }
+                    {
+                      name: 'secret02'
+                      version: 'versionB'
+                      vaultName: 'test-2-kv'
+                      vaultRG: 'test-2-rg'
+                      vaultSub: 'ijkl-1adg1'
+                    }
+                    ]
 
-resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = [for secret in secrets: {
-  name: secret.vaultName
-  scope: resourceGroup(secret.vaultSub, secret.vaultRG)
-}]
+                    resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = [for secret in secrets: {
+                      name: secret.vaultName
+                      scope: resourceGroup(secret.vaultSub, secret.vaultRG)
+                    }]
 
-module secret 'secret.bicep' = [for (secret, i) in secrets : {
-  name: 'secret'
-  scope: resourceGroup('secret-${i}-rg')
-  params: {
-    mySecret: kv[i].getSecret('super-${secret.name}', secret.version)
-  }
-}]
-"),
+                    module secret 'secret.bicep' = [for (secret, i) in secrets : {
+                      name: 'secret'
+                      scope: resourceGroup('secret-${i}-rg')
+                      params: {
+                        mySecret: kv[i].getSecret('super-${secret.name}', secret.version)
+                      }
+                    }]
+                "),
                 ("secret.bicep", @"
-@secure()
-param mySecret string = 'defaultSecret'
-
-output exposed string = mySecret
-"));
+                    @secure()
+                    param mySecret string = 'defaultSecret'
+                "));
 
             diags.Should().BeEmpty();
             template!.Should().NotBeNull();
@@ -378,6 +370,119 @@ module secret 'BAD_PATH_MODULE.bicep' = {
 
             result.Should().NotGenerateATemplate();
             result.Should().NotHaveDiagnosticsWithCodes(new[] { "BCP180" }, "Function placement should not be evaluated on a module that couldn't be read.");
+
+        }
+
+        /// <summary>
+        /// https://github.com/Azure/bicep/issues/4270
+        /// </summary>
+        [TestMethod]
+        public void SecretsWithConditional()
+        {
+            var result = CompilationHelper.Compile(
+                ("main.bicep", @"
+                    resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+                      name: 'testkeyvault'
+                    }
+
+                    module secret 'secret.bicep' = {
+                      name: 'secret'
+                      params: {
+                        mySecret: true == true ? kv.getSecret('mySecret','secretversionguid') : ''
+                      }
+                    }
+                "),
+                ("secret.bicep", @"
+                    @secure()
+                    param mySecret string = 'defaultSecret'
+                "));
+
+            result.Should().GenerateATemplate().And.NotHaveAnyDiagnostics();
+            var parameterToken = result.Template!.SelectToken("$.resources[?(@.name == 'secret')].properties.parameters.mySecret")!;
+            using (new AssertionScope())
+            {
+                parameterToken.Value<string>().Should().Be("[if(equals(true(), true()), createObject('reference', createObject('keyVault', createObject('id', resourceId('Microsoft.KeyVault/vaults', 'testkeyvault')), 'secretName', 'mySecret', 'secretVersion', 'secretversionguid')), createObject('value', ''))]");
+            }
+        }
+
+        [TestMethod]
+        public void SecretsWithConditional_InNestedCondition()
+        {
+            var result = CompilationHelper.Compile(
+                ("main.bicep", @"
+                    resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+                      name: 'testkeyvault'
+                    }
+
+                    module secret 'secret.bicep' = {
+                      name: 'secret'
+                      params: {
+                        mySecret: true == true ? false == false ? kv.getSecret('mySecret','secretversionguid') : 'false' : 'true'
+                      }
+                    }
+                "),
+                ("secret.bicep", @"
+                    @secure()
+                    param mySecret string = 'defaultSecret'
+                "));
+
+            result.Should().GenerateATemplate().And.NotHaveAnyDiagnostics();
+            var parameterToken = result.Template!.SelectToken("$.resources[?(@.name == 'secret')].properties.parameters.mySecret")!;
+            using (new AssertionScope())
+            {
+                parameterToken.Value<string>().Should().Be("[if(equals(true(), true()), if(equals(false(), false()), createObject('reference', createObject('keyVault', createObject('id', resourceId('Microsoft.KeyVault/vaults', 'testkeyvault')), 'secretName', 'mySecret', 'secretVersion', 'secretversionguid')), createObject('value', 'false')), createObject('value', 'true'))]");
+            }
+        }
+        [TestMethod]
+        public void SecretsWithConditional_CallInCondition_ShouldThrowError()
+        {
+            var result = CompilationHelper.Compile(
+                ("main.bicep", @"
+resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+  name: 'testkeyvault'
+}
+
+module secret 'secret.bicep' = {
+  name: 'secret'
+  params: {
+    mySecret: kv.getSecret('mySecret','secretversionguid') != '' ? 'true' : 'false'
+  }
+}
+"), ("secret.bicep", @"
+@secure()
+param mySecret string = 'defaultSecret'
+
+output exposed string = mySecret
+"));
+
+            result.Should()
+                .NotGenerateATemplate()
+                .And.OnlyContainDiagnostic("BCP180", DiagnosticLevel.Error, "Function \"getSecret\" is not valid at this location. It can only be used when directly assigning to a module parameter with a secure decorator.");
+        }
+        [TestMethod]
+        public void SecretsWithConditional_AssigningToNonSecretParameter_ShouldThrowError()
+        {
+            var result = CompilationHelper.Compile(
+                ("main.bicep", @"
+resource kv 'Microsoft.KeyVault/vaults@2019-09-01' existing = {
+  name: 'testkeyvault'
+}
+
+module secret 'secret.bicep' = {
+  name: 'secret'
+  params: {
+    mySecret: true ? kv.getSecret('mySecret','secretversionguid') : 'false'
+  }
+}
+"), ("secret.bicep", @"
+param mySecret string = 'notASecret'
+
+output exposed string = mySecret
+"));
+
+            result.Should()
+                .NotGenerateATemplate()
+                .And.OnlyContainDiagnostic("BCP180", DiagnosticLevel.Error, "Function \"getSecret\" is not valid at this location. It can only be used when directly assigning to a module parameter with a secure decorator.");
         }
     }
 }

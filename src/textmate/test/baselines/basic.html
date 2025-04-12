@@ -1,4 +1,8 @@
 
+<!--
+  Preview this file by prepending http://htmlpreview.github.io/? to its URL
+  e.g. http://htmlpreview.github.io/?https://raw.githubusercontent.com/Azure/bicep/main/src/textmate/test/baselines/basic.html
+-->
 <html>
   <head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.7.2/styles/default.min.css">
@@ -71,8 +75,8 @@
 <span class="hljs-string">      hello!</span>
 <span class="hljs-string">&#39;&#39;&#39;</span>
 
-<span class="hljs-keyword">var</span> <span class="hljs-variable">func</span> = <span class="hljs-function">resourceGroup</span>().<span class="hljs-variable">location</span>
-<span class="hljs-keyword">var</span> <span class="hljs-variable">func2</span> = <span class="hljs-function">reference</span>(<span class="hljs-string">&#39;</span><span class="hljs-string">Microsoft.KeyVault/vaults/secrets</span><span class="hljs-string">&#39;</span>, <span class="hljs-variable">func</span>)
+<span class="hljs-keyword">var</span> <span class="hljs-keyword">func</span> = <span class="hljs-function">resourceGroup</span>().<span class="hljs-variable">location</span>
+<span class="hljs-keyword">var</span> <span class="hljs-variable">func2</span> = <span class="hljs-function">reference</span>(<span class="hljs-string">&#39;</span><span class="hljs-string">Microsoft.KeyVault/vaults/secrets</span><span class="hljs-string">&#39;</span>, <span class="hljs-keyword">func</span>)
 <span class="hljs-keyword">var</span> <span class="hljs-variable">func3</span> = <span class="hljs-function">union</span>({
   <span class="hljs-string">&#39;</span><span class="hljs-string">abc</span><span class="hljs-string">&#39;</span>: <span class="hljs-function">resourceGroup</span>().<span class="hljs-variable">id</span>
 }, {

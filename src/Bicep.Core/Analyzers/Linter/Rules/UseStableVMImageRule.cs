@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Semantics;
@@ -18,20 +16,22 @@ namespace Bicep.Core.Analyzers.Linter.Rules
     {
         public new const string Code = "use-stable-vm-image";
 
-        private readonly ImmutableHashSet<string> imageReferenceProperties = ImmutableHashSet.Create<string>("offer", "sku", "version");
+        private readonly ImmutableHashSet<string> imageReferenceProperties = ["offer", "sku", "version"];
 
         public UseStableVMImageRule() : base(
             code: Code,
             description: CoreResources.UseStableVMImage,
+            LinterRuleCategory.BestPractice,
             docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         {
         }
+
         public override string FormatMessage(params object[] values)
         {
             return string.Format(CoreResources.UseStableVMImageRuleFixMessageFormat, values);
         }
 
-        public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
+        public override IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
         {
             List<IDiagnostic> diagnostics = new();
 
@@ -44,13 +44,13 @@ namespace Bicep.Core.Analyzers.Linter.Rules
 
                     if (imageReferenceValue is ObjectSyntax imageReferenceProperties)
                     {
-                        AddDiagnosticsIfImageReferencePropertiesContainPreview(imageReferenceProperties, diagnostics);
+                        AddDiagnosticsIfImageReferencePropertiesContainPreview(diagnosticLevel, imageReferenceProperties, diagnostics);
                     }
                     else if (imageReferenceValue is VariableAccessSyntax &&
                              model.GetSymbolInfo(imageReferenceValue) is VariableSymbol variableSymbol &&
-                             variableSymbol.Value is ObjectSyntax variableValueSyntax)
+                             variableSymbol.DeclaringVariable.Value is ObjectSyntax variableValueSyntax)
                     {
-                        AddDiagnosticsIfImageReferencePropertiesContainPreview(variableValueSyntax, diagnostics);
+                        AddDiagnosticsIfImageReferencePropertiesContainPreview(diagnosticLevel, variableValueSyntax, diagnostics);
                     }
                 }
             }
@@ -58,7 +58,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             return diagnostics;
         }
 
-        private void AddDiagnosticsIfImageReferencePropertiesContainPreview(ObjectSyntax objectSyntax, List<IDiagnostic> diagnostics)
+        private void AddDiagnosticsIfImageReferencePropertiesContainPreview(DiagnosticLevel diagnosticLevel, ObjectSyntax objectSyntax, List<IDiagnostic> diagnostics)
         {
             foreach (string property in imageReferenceProperties)
             {
@@ -67,7 +67,7 @@ namespace Bicep.Core.Analyzers.Linter.Rules
                     valueSyntax.TryGetLiteralValue() is string value &&
                     value.Contains("preview", StringComparison.OrdinalIgnoreCase))
                 {
-                    diagnostics.Add(CreateDiagnosticForSpan(valueSyntax.Span, property));
+                    diagnostics.Add(CreateDiagnosticForSpan(diagnosticLevel, valueSyntax.Span, property));
                 }
             }
         }

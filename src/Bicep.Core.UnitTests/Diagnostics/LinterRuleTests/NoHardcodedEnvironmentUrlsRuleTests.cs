@@ -1,9 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Linq;
-using Azure.Deployments.Core.Extensions;
 using Bicep.Core.Analyzers.Linter.Rules;
+using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 // TODO: Test with different configs
@@ -85,7 +84,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [DataTestMethod]
         public void Simple(int diagnosticCount, string text)
         {
-            AssertLinterRuleDiagnostics(NoHardcodedEnvironmentUrlsRule.Code, text, diagnosticCount, OnCompileErrors.Ignore);
+            AssertLinterRuleDiagnostics(NoHardcodedEnvironmentUrlsRule.Code, text, diagnosticCount, new Options(OnCompileErrors.Ignore));
         }
 
         [DataRow(1, @"
@@ -129,12 +128,11 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [DataTestMethod]
         public void InsideExpressions(int diagnosticCount, string text)
         {
-            AssertLinterRuleDiagnostics(NoHardcodedEnvironmentUrlsRule.Code, text, diagnosticCount, OnCompileErrors.Ignore);
+            AssertLinterRuleDiagnostics(NoHardcodedEnvironmentUrlsRule.Code, text, diagnosticCount, new Options(OnCompileErrors.Ignore));
         }
 
         [DataTestMethod]
-        // valid matches
-        [DataRow("azure.schema.management.azure.com", true)]
+        // valid matches (i.e., linter rule fails)
         [DataRow("aschema.management.azure.com", true)]
         [DataRow("azure.aschema.management.azure.com", true)]
         [DataRow("management.azure.com", true)]
@@ -143,7 +141,8 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [DataRow("subdomain1.management.azure.com", true)]
         [DataRow("http://subdomain1.management.azure.com", true)]
         [DataRow("https://subdomain1.management.azure.com", true)]
-        // should not match
+        // should not match (i.e., linter rule passes)
+        [DataRow("azure.schema.management.azure.com", false)]
         [DataRow("othermanagement.azure.com", false)]
         [DataRow("azure.schema.mannnnagement.azure.com", false)]
         [DataRow("management.azzzzure.com", false)]
@@ -152,25 +151,36 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [DataRow("subdomain1.management.azzzure.com", false)]
         [DataRow("http://subdomain1.manageeeement.azure.com", false)]
         [DataRow("https://subdomain1.managemeeeent.azure.com", false)]
+        [DataRow("asazure.windows.net/servers}", false)]
+        [DataRow("${'location'}.asazure.windows.net/servers/${'aasServerName'}", false)]
         public void DisallowedHostsMatchingTest(string testString, bool isMatch)
         {
-            var rule = new NoHardcodedEnvironmentUrlsRule();
-            var configuration = BicepTestConstants.BuiltInConfiguration;
-            rule.Configure(configuration.Analyzers);
-
-            Assert.AreEqual(isMatch, actual: rule.DisallowedHosts.Any(host => NoHardcodedEnvironmentUrlsRule.FindHostnameMatches(host, testString).Any()));
+            AssertLinterRuleDiagnostics(NoHardcodedEnvironmentUrlsRule.Code, @$"output str string = '{testString}'", diags =>
+            {
+                if (isMatch)
+                {
+                    diags.Should().HaveCount(1);
+                    diags.Select(d => d.Code).Should().AllBe(NoHardcodedEnvironmentUrlsRule.Code);
+                }
+                else
+                {
+                    diags.Should().BeEmpty();
+                }
+            });
         }
 
         [DataTestMethod]
-        // valid matches
+        // valid matches (i.e. it will be excluded and there should be no linter failures)
         [DataRow("schema.management.azure.com", true)]
         [DataRow("http://schema.management.azure.com", true)]
         [DataRow("https://schema.management.azure.com", true)]
         [DataRow("subany.schema.management.azure.com", true)]
         [DataRow("http://subany.schema.management.azure.com", true)]
         [DataRow("https://subany.schema.management.azure.com", true)]
+        [DataRow("https://subany.SCHEMA.MANAGEMENT.Azure.Com", true)]
         [DataRow("all the world is a stage, but subdomain1.schema.management.azure.com should not be hardcoded", true)]
-        // should not match
+        [DataRow("rasazure.windows.net/servers}", true)]
+        // should not match (i.e. it will not be excluded and there *should* be linter failures)
         [DataRow("aschema.management.azure.com", false)]
         [DataRow("azure.aschema.management.azure.com", false)]
         [DataRow("management.azure.com", false)]
@@ -180,15 +190,21 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [DataRow("http://subdomain1.management.azure.com", false)]
         [DataRow("https://subdomain1.management.azure.com", false)]
         [DataRow("all the world is a stage, but subdomain1.management.azure.com should not be hardcoded", false)]
-        [DataRow("all the world is a stage, but subdomain1.schema.management.azure.com should not be hardcoded", true)]
+        [DataRow("all the world is a stage, but subdomain1.1schema.management.azure.com should not be hardcoded", false)]
         public void ExcludedHostsMatchingTest(string testString, bool isMatch)
         {
-            var rule = new NoHardcodedEnvironmentUrlsRule();
-            var configuration = BicepTestConstants.BuiltInConfiguration;
-            rule.Configure(configuration.Analyzers);
-
-            Assert.AreEqual(isMatch, rule.ExcludedHosts.Any(host => NoHardcodedEnvironmentUrlsRule.FindHostnameMatches(host, testString).Any()));
+            AssertLinterRuleDiagnostics(NoHardcodedEnvironmentUrlsRule.Code, @$"output str string = '{testString}'", diags =>
+            {
+                if (isMatch)
+                {
+                    diags.Should().BeEmpty();
+                }
+                else
+                {
+                    diags.Should().HaveCount(1);
+                    diags.Select(d => d.Code).Should().AllBe(NoHardcodedEnvironmentUrlsRule.Code);
+                }
+            });
         }
     }
 }
-

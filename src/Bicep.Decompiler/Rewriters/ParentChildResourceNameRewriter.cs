@@ -1,12 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Linq;
 using Bicep.Core.Extensions;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
-using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Decompiler.Rewriters
 {
@@ -44,7 +42,7 @@ namespace Bicep.Core.Decompiler.Rewriters
                             return null;
                         }
 
-                        if (!childName.SegmentValues[1].StartsWith("/"))
+                        if (!childName.SegmentValues[1].StartsWith('/'))
                         {
                             return null;
                         }
@@ -114,16 +112,16 @@ namespace Bicep.Core.Decompiler.Rewriters
                 }
 
                 var replacementNameProp = new ObjectPropertySyntax(resourceNameProp.Key, resourceNameProp.Colon, newName);
-                var parentProp = new ObjectPropertySyntax(
-                    SyntaxFactory.CreateIdentifier(LanguageConstants.ResourceParentPropertyName),
-                    SyntaxFactory.ColonToken,
+                var parentProp = SyntaxFactory.CreateObjectProperty(
+                    LanguageConstants.ResourceParentPropertyName,
                     SyntaxFactory.CreateVariableAccess(otherResourceSymbol.Name));
 
-                var replacementBody = new ObjectSyntax(
-                    resourceBody.OpenBrace,
-                    // parent prop comes first!
-                    parentProp.AsEnumerable().Concat(resourceBody.Children.Replace(resourceNameProp, replacementNameProp)),
-                    resourceBody.CloseBrace);
+                // parent prop comes first!
+                var newProperties = parentProp.AsEnumerable()
+                    .Concat(resourceBody.Children.Replace(resourceNameProp, replacementNameProp))
+                    .OfType<ObjectPropertySyntax>();
+
+                var replacementBody = SyntaxFactory.CreateObject(newProperties);
 
                 // at the top we just checked if there is a legitimate body
                 // but to do the replacement correctly we may need to wrap it inside an IfConditionSyntax
@@ -143,6 +141,7 @@ namespace Bicep.Core.Decompiler.Rewriters
                     syntax.Type,
                     syntax.ExistingKeyword,
                     syntax.Assignment,
+                    syntax.Newlines,
                     replacementValue);
             }
 

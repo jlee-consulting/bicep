@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Diagnostics.CodeAnalysis;
 using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
 using FluentAssertions.Execution;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Bicep.Core.IntegrationTests
 {
@@ -354,8 +354,9 @@ resource thing 'Microsoft.Network/virtualNetworks/subnets/things@2021-05-01' = [
 
         private CompilationHelper.CompilationResult Compile(string bicep, bool symbolicNameCodegenEnabled)
         {
-            var context = new CompilationHelper.CompilationHelperContext(Features: BicepTestConstants.CreateFeaturesProvider(this.TestContext, symbolicNameCodegenEnabled: symbolicNameCodegenEnabled));
-            return CompilationHelper.Compile(context, bicep);
+            var services = new ServiceBuilder().WithFeatureOverrides(new(this.TestContext, SymbolicNameCodegenEnabled: symbolicNameCodegenEnabled));
+
+            return CompilationHelper.Compile(services, bicep);
         }
     }
 }

@@ -1,15 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
+using System.Text;
 using Bicep.Core.Extensions;
-using Bicep.Core.Navigation;
-using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.Parsing;
 using Bicep.Core.Samples;
 using Bicep.Core.Syntax;
+using Bicep.Core.Text;
+using Bicep.Core.UnitTests.Assertions;
+using Bicep.Core.UnitTests.Syntax;
 using Bicep.Core.UnitTests.Utils;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -19,46 +18,6 @@ namespace Bicep.Core.IntegrationTests
     [TestClass]
     public class ParserTests
     {
-        private class SyntaxCollectorVisitor : SyntaxVisitor
-        {
-            public class SyntaxItem
-            {
-                public SyntaxItem(SyntaxBase syntax, int depth)
-                {
-                    Syntax = syntax;
-                    Depth = depth;
-                }
-
-                public SyntaxBase Syntax { get; }
-
-                public int Depth { get; }
-            }
-
-            private int depth = 0;
-            private readonly IList<SyntaxItem> syntaxList = new List<SyntaxItem>();
-
-            private SyntaxCollectorVisitor()
-            {
-            }
-
-            public static ImmutableArray<SyntaxItem> Build(ProgramSyntax syntax)
-            {
-                var visitor = new SyntaxCollectorVisitor();
-                visitor.VisitProgramSyntax(syntax);
-
-                return visitor.syntaxList.ToImmutableArray();
-            }
-
-            protected override void VisitInternal(SyntaxBase syntax)
-            {
-                syntaxList.Add(new SyntaxItem(syntax, depth));
-
-                depth++;
-                base.VisitInternal(syntax);
-                depth--;
-            }
-        }
-
         [NotNull]
         public TestContext? TestContext { get; set; }
 
@@ -98,29 +57,36 @@ namespace Bicep.Core.IntegrationTests
         {
             var program = ParserHelper.Parse(dataSet.Bicep);
             var syntaxList = SyntaxCollectorVisitor.Build(program);
-
-            string getLoggingString(SyntaxCollectorVisitor.SyntaxItem data)
-            {
-                var depthPrefix = new string(' ', data.Depth);
-
-                if (data.Syntax is Token token)
-                {
-                    return $"{depthPrefix}{token.Type} |{OutputHelper.EscapeWhitespace(token.Text)}|";
-                }
-
-                return $"{depthPrefix}{data.Syntax.GetType().Name}";
-            }
+            var syntaxByParent = syntaxList.ToLookup(x => x.Parent);
 
             TextSpan getSpan(SyntaxCollectorVisitor.SyntaxItem data) => data.Syntax.Span;
 
-            var sourceTextWithDiags = DataSet.AddDiagsToSourceText(dataSet, syntaxList, getSpan, getLoggingString);
+            var sourceTextWithDiags = DataSet.AddDiagsToSourceText(dataSet, syntaxList, getSpan, syntax => GetSyntaxLoggingString(syntaxByParent, syntax));
             var resultsFile = FileHelper.SaveResultFile(this.TestContext, Path.Combine(dataSet.Name, DataSet.TestFileMainSyntax), sourceTextWithDiags);
 
             sourceTextWithDiags.Should().EqualWithLineByLineDiffOutput(
                 TestContext,
                 dataSet.Syntax,
-                expectedLocation: DataSet.GetBaselineUpdatePath(dataSet, DataSet.TestFileMainSyntax),
-                actualLocation: resultsFile);
+                expectedPath: DataSet.GetBaselineUpdatePath(dataSet, DataSet.TestFileMainSyntax),
+                actualPath: resultsFile);
+        }
+
+        [DataTestMethod]
+        [BaselineData_Bicepparam.TestData()]
+        [TestCategory(BaselineHelper.BaselineTestCategory)]
+        public void Params_Parser_should_produce_expected_syntax(BaselineData_Bicepparam baselineData)
+        {
+            var data = baselineData.GetData(TestContext);
+            var program = ParserHelper.ParamsParse(data.Parameters.EmbeddedFile.Contents);
+            var syntaxList = SyntaxCollectorVisitor.Build(program);
+            var syntaxByParent = syntaxList.ToLookup(x => x.Parent);
+
+            TextSpan getSpan(SyntaxCollectorVisitor.SyntaxItem data) => data.Syntax.Span;
+
+            var sourceTextWithDiags = OutputHelper.AddDiagsToSourceText(data.Parameters.EmbeddedFile.Contents, "\n", syntaxList, getSpan, syntax => GetSyntaxLoggingString(syntaxByParent, syntax));
+
+            data.Syntax.WriteToOutputFolder(sourceTextWithDiags);
+            data.Syntax.ShouldHaveExpectedValue();
         }
 
         private static IEnumerable<object[]> GetData()
@@ -133,7 +99,7 @@ namespace Bicep.Core.IntegrationTests
             var program = ParserHelper.Parse(contents);
             program.Should().BeOfType<ProgramSyntax>();
 
-            program.ToTextPreserveFormatting().Should().Be(contents);
+            program.ToString().Should().Be(contents);
         }
 
         private static void RunSpanConsistencyTest(string text)
@@ -145,7 +111,41 @@ namespace Bicep.Core.IntegrationTests
             visitor.Visit(program);
         }
 
-        private sealed class SpanConsistencyVisitor : SyntaxVisitor
+        private static string GetSyntaxLoggingString(
+            ILookup<SyntaxCollectorVisitor.SyntaxItem?, SyntaxCollectorVisitor.SyntaxItem> syntaxByParent,
+            SyntaxCollectorVisitor.SyntaxItem syntax)
+        {
+            // Build a visual graph with lines to help understand the syntax hierarchy
+            var graphPrefix = new StringBuilder();
+
+            foreach (var ancestor in syntax.GetAncestors().Reverse().Skip(1))
+            {
+                var isLast = (ancestor.Depth > 0 && ancestor == syntaxByParent[ancestor.Parent].Last());
+                graphPrefix.Append(isLast switch
+                {
+                    true => "  ",
+                    _ => "| ",
+                });
+            }
+
+            if (syntax.Depth > 0)
+            {
+                var isLast = syntax == syntaxByParent[syntax.Parent].Last();
+                graphPrefix.Append(isLast switch
+                {
+                    true => "└─",
+                    _ => "├─",
+                });
+            }
+
+            return syntax.Syntax switch
+            {
+                Token token => $"{graphPrefix}Token({token.Type}) |{OutputHelper.EscapeWhitespace(token.Text)}|",
+                _ => $"{graphPrefix}{syntax.Syntax.GetType().Name}",
+            };
+        }
+
+        private sealed class SpanConsistencyVisitor : CstVisitor
         {
             private int maxPosition = 0;
 
@@ -173,4 +173,3 @@ namespace Bicep.Core.IntegrationTests
         }
     }
 }
-

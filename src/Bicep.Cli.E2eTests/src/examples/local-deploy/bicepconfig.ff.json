@@ -1,0 +1,16 @@
+{
+  "experimentalFeaturesEnabled": {
+    "extensibility": true,
+    "localDeploy": true
+  },
+  "extensions": {
+    "mock": "$TARGET_REFERENCE"
+  },
+  "cloud": {
+    "currentProfile": "AzureUSGovernment",
+    "credentialPrecedence": [
+      "Environment",
+      "AzureCLI"
+    ]
+  }
+}

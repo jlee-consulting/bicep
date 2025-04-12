@@ -3,14 +3,11 @@
 import * as vscode from "vscode";
 import { Range } from "vscode";
 import { Position } from "vscode";
-
-import { readExampleFile } from "./examples";
-import {
-  executeCloseAllEditors,
-  executeCompletionItemProvider,
-} from "./commands";
+import { sleep } from "../../utils/time";
 import { expectDefined } from "../utils/assert";
-import { retryWhile, sleep } from "../utils/time";
+import { retryWhile } from "../utils/time";
+import { executeCloseAllEditors, executeCompletionItemProvider } from "./commands";
+import { readExampleFile } from "./examples";
 
 describe("completion", (): void => {
   let document: vscode.TextDocument;
@@ -34,27 +31,18 @@ describe("completion", (): void => {
     await executeCloseAllEditors();
   });
 
-  it("should provide completion while typing an indentifier", async () => {
-    await editor.edit((editBuilder) =>
-      editBuilder.insert(new Position(17, 0), "var foo = data")
-    );
+  it("should provide completion while typing an identifier", async () => {
+    await editor.edit((editBuilder) => editBuilder.insert(new Position(17, 0), "var foo = data"));
 
     const completionList = await retryWhile(
-      async () =>
-        await executeCompletionItemProvider(
-          document.uri,
-          new vscode.Position(17, 14)
-        ),
+      async () => await executeCompletionItemProvider(document.uri, new vscode.Position(17, 14)),
       (completionList) =>
-        completionList === undefined ||
-        !completionList.items.map((item) => item.label).includes("dataUri")
+        completionList === undefined || !completionList.items.map((item) => item.label).includes("dataUri"),
     );
 
     expectDefined(completionList);
     expect(completionList.items.map((item) => item.label)).toContain("dataUri");
 
-    await editor.edit((editBuilder) =>
-      editBuilder.delete(new Range(new Position(17, 0), new Position(17, 14)))
-    );
+    await editor.edit((editBuilder) => editBuilder.delete(new Range(new Position(17, 0), new Position(17, 14))));
   });
 });

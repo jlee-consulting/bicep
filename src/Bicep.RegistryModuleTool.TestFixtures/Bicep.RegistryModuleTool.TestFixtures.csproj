@@ -2,42 +2,28 @@
 
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Workaround for https://github.com/microsoft/testfx/issues/4945 -->
+    <TestingPlatformDotnetTestSupport>false</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="SampleFiles/**/*" />
+    <EmbeddedResource Include="Samples/**/*" WithCulture="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Remove="SampleFiles\Modified\main.json" />
-    <None Remove="SampleFiles\Modified\README.md" />
-    <None Remove="SampleFiles\Modified\test\main.test.bicep" />
-    <None Remove="SampleFiles\Modified\version.json" />
-    <None Remove="SampleFiles\NewlyGenerated\main.bicep" />
-    <None Remove="SampleFiles\NewlyGenerated\main.json" />
-    <None Remove="SampleFiles\NewlyGenerated\metadata.json" />
-    <None Remove="SampleFiles\NewlyGenerated\README.md" />
-    <None Remove="SampleFiles\NewlyGenerated\test\main.test.bicep" />
-    <None Remove="SampleFiles\NewlyGenerated\version.json" />
-    <None Remove="SampleFiles\Invalid\metadata.json" />
-    <None Remove="SampleFiles\Invalid\test\main.test.bicep" />
-    <None Remove="SampleFiles\Valid\test\main.test.bicep" />
+    <PackageReference Include="FluentAssertions" Version="7.0.0" />
+    <PackageReference Include="JsonPatch.Net" Version="3.3.0" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="21.3.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentAssertions" Version="6.6.0" />
-    <PackageReference Include="JsonPatch.Net" Version="1.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.1" />
-    <PackageReference Include="Moq" Version="4.17.2" />
-    <PackageReference Include="System.IO.Abstractions.TestingHelpers" Version="16.1.25" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <ProjectReference Include="..\Bicep.Core.UnitTests\Bicep.Core.UnitTests.csproj" />
     <ProjectReference Include="..\Bicep.RegistryModuleTool\Bicep.RegistryModuleTool.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="Nerdbank.GitVersioning" Version="3.4.255" />
+    <PackageReference Update="Nerdbank.GitVersioning" Version="3.7.112" />
   </ItemGroup>
-
 </Project>

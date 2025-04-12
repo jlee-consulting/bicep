@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Bicep.Core.Diagnostics;
+using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -140,25 +141,6 @@ resource foos 'Microsoft.Network/dnsZones@2018-05-01' = [for (item, i) in []: {
         }
 
         [TestMethod]
-        public void MissingModuleExpectedVariantPropertiesShouldProduceNoWarning()
-        {
-            const string text = @"
-module mod 'mod.bicep' = [for a in []: {
-  params: {
-    foo: 's'
-  }
-}]";
-            //bicep(BCP035)
-            var result = CompilationHelper.Compile(
-                ("main.bicep", text),
-                ("mod.bicep", "param foo string"));
-            result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
-{
-                ("BCP035", DiagnosticLevel.Error, "The specified \"module\" declaration is missing the following required properties: \"name\".")
-            });
-        }
-
-        [TestMethod]
         public void InvariantModuleNameShouldProduceWarning()
         {
             const string text = @"
@@ -180,8 +162,8 @@ module mod2 'mod.bicep' = [for (x, i) in []: {
                 ("mod.bicep", "param foo string"));
             result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
             {
-                ("BCP179", DiagnosticLevel.Warning, "The loop item variable \"a\" must be referenced in at least one of the value expressions of the following properties: \"name\", \"scope\""),
-                ("BCP179", DiagnosticLevel.Warning, "The loop item variable \"x\" or the index variable \"i\" must be referenced in at least one of the value expressions of the following properties in the loop body: \"name\", \"scope\"")
+                ("BCP179", DiagnosticLevel.Warning, "Unique resource or deployment name is required when looping. The loop item variable \"a\" must be referenced in at least one of the value expressions of the following properties: \"name\", \"scope\""),
+                ("BCP179", DiagnosticLevel.Warning, "Unique resource or deployment name is required when looping. The loop item variable \"x\" or the index variable \"i\" must be referenced in at least one of the value expressions of the following properties in the loop body: \"name\", \"scope\"")
             });
         }
 
@@ -203,8 +185,8 @@ resource foos2 'Microsoft.Network/dnsZones@2018-05-01' = [for item in []: {
             var result = CompilationHelper.Compile(text);
             result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
             {
-                ("BCP179", DiagnosticLevel.Warning, "The loop item variable \"item\" or the index variable \"i\" must be referenced in at least one of the value expressions of the following properties in the loop body: \"name\""),
-                ("BCP179", DiagnosticLevel.Warning, "The loop item variable \"item\" must be referenced in at least one of the value expressions of the following properties: \"name\"")
+                ("BCP179", DiagnosticLevel.Warning, "Unique resource or deployment name is required when looping. The loop item variable \"item\" or the index variable \"i\" must be referenced in at least one of the value expressions of the following properties in the loop body: \"name\""),
+                ("BCP179", DiagnosticLevel.Warning, "Unique resource or deployment name is required when looping. The loop item variable \"item\" must be referenced in at least one of the value expressions of the following properties: \"name\"")
             });
         }
 
@@ -234,13 +216,8 @@ resource c3 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = [for (cname,i) in []
         }
 
         [TestMethod]
-        public void OptionalInvariantModulePropertiesWhenRequiredPropertyIsMissingShouldNotProduceWarning()
+        public void OptionalModuleNameShouldNotProduceWarning()
         {
-            /*
-             * This asserts that we don't overwarn. If the user didn't yet put in a value for
-             * a required property that is expected to be loop-variant, we should not warn them.
-             */
-
             const string text = @"
 module mod 'mod.bicep' = [for a in []: {
   scope: resourceGroup()
@@ -249,13 +226,13 @@ module mod 'mod.bicep' = [for a in []: {
   }
 }]
 ";
+            var serviceBuilder = new ServiceBuilder();
             var result = CompilationHelper.Compile(
+                serviceBuilder,
                 ("main.bicep", text),
                 ("mod.bicep", "param foo string"));
-            result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
-{
-                ("BCP035", DiagnosticLevel.Error, "The specified \"module\" declaration is missing the following required properties: \"name\".")
-            });
+
+            result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
         }
 
         [TestMethod]
@@ -282,8 +259,8 @@ module mod2 'mod.bicep' = [for (x, i) in []: {
                 ("mod.bicep", "param foo string"));
             result.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[]
             {
-                ("BCP179", DiagnosticLevel.Warning, "The loop item variable \"a\" must be referenced in at least one of the value expressions of the following properties: \"name\", \"scope\""),
-                ("BCP179", DiagnosticLevel.Warning, "The loop item variable \"x\" or the index variable \"i\" must be referenced in at least one of the value expressions of the following properties in the loop body: \"name\", \"scope\"")
+                ("BCP179", DiagnosticLevel.Warning, "Unique resource or deployment name is required when looping. The loop item variable \"a\" must be referenced in at least one of the value expressions of the following properties: \"name\", \"scope\""),
+                ("BCP179", DiagnosticLevel.Warning, "Unique resource or deployment name is required when looping. The loop item variable \"x\" or the index variable \"i\" must be referenced in at least one of the value expressions of the following properties in the loop body: \"name\", \"scope\"")
             });
         }
 

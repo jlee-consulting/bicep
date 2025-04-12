@@ -1,19 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Collections.Generic;
-using System.Linq;
+
 using Bicep.Core.Analyzers;
 using Bicep.Core.Diagnostics;
-using Bicep.Core.Analyzers.Linter;
 
 namespace Bicep.Core.UnitTests.Assertions
 {
     public static class IDiagnosticExtensions
     {
-        public static IEnumerable<IDiagnostic> ExcludingLinterDiagnostics(this IEnumerable<IDiagnostic> diagnostics, params string[] codes)
+        public static IEnumerable<IDiagnostic> ExcludingLinterDiagnostics(this IEnumerable<IDiagnostic> diagnostics)
         {
-            diagnostics.Should().NotContainDiagnostic(LinterAnalyzer.LinterRuleInternalError, "Should never get LinterAnalyzer.LinterRuleInternalError");
-            return diagnostics.Where(d => d is not AnalyzerDiagnostic);
+            return diagnostics.Where(d => d.Source != DiagnosticSource.CoreLinter);
         }
 
         public static IEnumerable<IDiagnostic> ExcludingCode(this IEnumerable<IDiagnostic> diagnostics, params string[] codes)
@@ -25,5 +22,8 @@ namespace Bicep.Core.UnitTests.Assertions
         {
             return diagnostics.ExcludingCode("BCP081");
         }
+
+        public static IEnumerable<IDiagnostic> OnlyIncludingErrorDiagnostics(this IEnumerable<IDiagnostic> diagnostics)
+            => diagnostics.Where(d => d.IsError());
     }
 }

@@ -8,7 +8,7 @@ using static Bicep.Core.Semantics.ResourceAncestorGraph;
 
 namespace Bicep.Core.Semantics
 {
-    public sealed class ResourceAncestorVisitor : SyntaxVisitor
+    public sealed class ResourceAncestorVisitor : AstVisitor
     {
         private readonly SemanticModel semanticModel;
         private readonly ImmutableDictionary<DeclaredResourceMetadata, ResourceAncestor>.Builder ancestry;
@@ -31,7 +31,7 @@ namespace Bicep.Core.Semantics
                 return;
             }
 
-            if (semanticModel.Binder.GetNearestAncestor<ResourceDeclarationSyntax>(syntax) is {} nestedParentSyntax)
+            if (semanticModel.Binder.GetNearestAncestor<ResourceDeclarationSyntax>(syntax) is { } nestedParentSyntax)
             {
                 // nested resource parent syntax
                 if (semanticModel.ResourceMetadata.TryLookup(nestedParentSyntax) is DeclaredResourceMetadata parentResource)

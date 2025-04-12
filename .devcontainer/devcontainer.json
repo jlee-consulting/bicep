@@ -1,22 +1,36 @@
 {
   "name": "Bicep Development Environment",
-  "extensions": [
-    "msazurermtools.azurerm-vscode-tools",
-    "ms-azuretools.vscode-bicep",
-    "ms-dotnettools.csharp",
-    "ms-azuretools.vscode-docker",
-    "editorconfig.editorconfig",
-    "github.vscode-pull-request-github"
-  ],
+  "image": "mcr.microsoft.com/devcontainers/base:bullseye",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "msazurermtools.azurerm-vscode-tools",
+        "ms-dotnettools.vscode-dotnet-runtime",
+        "ms-azuretools.vscode-bicep",
+        "ms-dotnettools.csharp",
+        "ms-azuretools.vscode-docker",
+        "editorconfig.editorconfig",
+        "github.vscode-pull-request-github",
+        "github.vscode-github-actions",
+        "ms-dotnettools.csdevkit",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
   "features": {
-    "github-cli": "latest",
-    "azure-cli": "latest",
-    "node": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "8.0"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
       "version": "lts",
       "nodeGypDependencies": true
-    },
-    "dotnet": {
-      "version": "6.0"
     }
   }
 }

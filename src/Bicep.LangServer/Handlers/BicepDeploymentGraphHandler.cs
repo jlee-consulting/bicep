@@ -1,24 +1,21 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Bicep.Core;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Emit;
-using Bicep.Core.Parsing;
+using Bicep.Core.Navigation;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
+using Bicep.Core.Text;
 using Bicep.LanguageServer.CompilationManager;
 using Bicep.LanguageServer.Extensions;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using OmniSharp.Extensions.JsonRpc;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
 namespace Bicep.LanguageServer.Handlers
 {
@@ -77,7 +74,7 @@ namespace Bicep.LanguageServer.Handlers
                     .Where(x => x.Key.Name != LanguageConstants.MissingName && x.Key.Name != LanguageConstants.ErrorName)
                     .ToImmutableDictionary(x => x.Key, x => x.Value);
 
-                var errors = semanticModel.GetAllDiagnostics().Where(x => x.Level == DiagnosticLevel.Error).ToList();
+                var errors = semanticModel.GetAllDiagnostics().Where(x => x.IsError()).ToList();
 
                 // Create nodes.
                 foreach (var symbol in dependenciesBySymbol.Keys)
@@ -111,7 +108,7 @@ namespace Bicep.LanguageServer.Handlers
                         var hasChildren = false;
 
                         if (moduleFilePath is not null &&
-                            moduleSymbol.TryGetSemanticModel(out var moduleSemanticModel, out var _) &&
+                            moduleSymbol.TryGetSemanticModel().IsSuccess(out var moduleSemanticModel, out var _) &&
                             moduleSemanticModel is SemanticModel bicepModel &&
                             (bicepModel.Root.ResourceDeclarations.Any() || bicepModel.Root.ModuleDeclarations.Any()))
                         {
@@ -133,7 +130,7 @@ namespace Bicep.LanguageServer.Handlers
                         continue;
                     }
 
-                    foreach (var dependency in dependencies.Where(d => d.Kind == ResourceDependencyKind.Primary))
+                    foreach (var dependency in dependencies)
                     {
                         if (!nodesBySymbol.TryGetValue(dependency.Resource, out var target))
                         {
@@ -148,7 +145,7 @@ namespace Bicep.LanguageServer.Handlers
             var graph = new BicepDeploymentGraph(
                 nodes.OrderBy(node => node.Id),
                 edges.OrderBy(edge => $"{edge.SourceId}>{edge.TargetId}"),
-                entrySemanticModel.GetAllDiagnostics().Count(x => x.Level == DiagnosticLevel.Error));
+                entrySemanticModel.GetAllDiagnostics().Count(x => x.IsError()));
 
             return graph;
         }

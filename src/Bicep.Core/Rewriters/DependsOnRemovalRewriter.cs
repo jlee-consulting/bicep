@@ -1,16 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using Bicep.Core.Parsing;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
 using Bicep.Core.Visitors;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace Bicep.Core.Rewriters
 {
     // Looks for resources where a dependency can already be inferred by the structure of the resource declaration.
-    // 
+    //
     // As an example, because the below resource already has a reference to 'otherRes' in the name property, the dependsOn is not adding anything:
     //   resource myRes 'My.Rp/myResource@2020-01-01' = {
     //     name: otherRes.name
@@ -60,14 +59,14 @@ namespace Bicep.Core.Rewriters
             }
 
             var builtInDependencies = new HashSet<Symbol>();
-            foreach (var property in @object.Properties)
+            foreach (var child in @object.Children)
             {
-                if (property == dependsOnProperty)
+                if (child == dependsOnProperty)
                 {
                     continue;
                 }
 
-                var dependencies = ResourceDependencyFinderVisitor.GetResourceDependencies(semanticModel, property);
+                var dependencies = ResourceDependencyFinderVisitor.GetResourceDependencies(semanticModel, child);
                 builtInDependencies.UnionWith(dependencies);
             }
 
@@ -118,6 +117,15 @@ namespace Bicep.Core.Rewriters
                                 newDependsOnArrayChildren,
                                 dependsOnArray.CloseBracket)));
                     }
+
+                    // if the dependsOn array is now empty, then we skip emitting it entirely
+                    continue;
+                }
+
+                if (child is Token { Type: TokenType.NewLine } &&
+                    newChildren.LastOrDefault() is Token { Type: TokenType.NewLine })
+                {
+                    // collapse blank lines
                     continue;
                 }
 
@@ -145,6 +153,7 @@ namespace Bicep.Core.Rewriters
                 syntax.Type,
                 syntax.ExistingKeyword,
                 syntax.Assignment,
+                syntax.Newlines,
                 replacementValue);
         }
 
@@ -162,6 +171,7 @@ namespace Bicep.Core.Rewriters
                 syntax.Name,
                 syntax.Path,
                 syntax.Assignment,
+                syntax.Newlines,
                 replacementValue);
         }
     }

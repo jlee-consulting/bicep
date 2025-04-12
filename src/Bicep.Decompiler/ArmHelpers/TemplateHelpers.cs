@@ -1,12 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Azure.Deployments.Core.Extensions;
 using Azure.Deployments.Expression.Engines;
 using Azure.Deployments.Expression.Expressions;
+using Bicep.Core;
 using Bicep.Decompiler.Exceptions;
 using Newtonsoft.Json.Linq;
 
@@ -101,9 +98,9 @@ namespace Bicep.Decompiler.ArmHelpers
 
                 var (childType, childName, _) = ParseResource(childResourceObject);
 
-                if (GetProperty(resource, "copy") is { } copyProperty)
+                if (GetProperty(resource, LanguageConstants.CopyLoopIdentifier) is { } copyProperty)
                 {
-                    childResourceObject["copy"] = copyProperty.Value;
+                    childResourceObject[LanguageConstants.CopyLoopIdentifier] = copyProperty.Value;
                 }
                 if (GetProperty(resource, "condition") is { } conditionProperty)
                 {
@@ -154,10 +151,10 @@ namespace Bicep.Decompiler.ArmHelpers
                 var withoutProperties = new FunctionExpression(
                     function.Function,
                     function.Parameters,
-                    Array.Empty<LanguageExpression>());
+                    []);
 
                 var paramNameSerialized = ExpressionsEngine.SerializeExpression(paramNameExpression);
-                var paramName = UniqueNamingResolver.EscapeIdentifier(paramNameSerialized);
+                var paramName = UniqueNamingResolver.EscapeIdentifier(paramNameSerialized, isGenerated: true);
 
                 if (paramsAccessed.Contains(paramName))
                 {
@@ -250,7 +247,7 @@ namespace Bicep.Decompiler.ArmHelpers
                     var paramExpression = new FunctionExpression(
                         "parameters",
                         function.Parameters,
-                        Array.Empty<LanguageExpression>());
+                        []);
 
                     parameters[parameterName.Value.ToString()] = (paramExpression, "__BICEP_REPLACE");
                 }

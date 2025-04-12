@@ -1,49 +1,64 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using Bicep.Core;
-using Bicep.Core.Analyzers.Linter;
 using Bicep.Core.Configuration;
-using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
-using Bicep.Core.Syntax;
+using Bicep.Core.SourceGraph;
 using Bicep.Core.UnitTests;
+using Bicep.Core.UnitTests.Features;
 using Bicep.Core.UnitTests.Utils;
-using Bicep.Core.Workspaces;
 using Bicep.LanguageServer;
 using Bicep.LanguageServer.CompilationManager;
 using Bicep.LanguageServer.Providers;
 using Bicep.LanguageServer.Registry;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.Extensions.LanguageServer.Protocol.Server;
-using IOFileSystem = System.IO.Abstractions.FileSystem;
 
 namespace Bicep.LangServer.UnitTests
 {
     public class BicepCompilationManagerHelper
     {
-        private static readonly FileResolver FileResolver = new();
         private static readonly MockRepository Repository = new(MockBehavior.Strict);
-        private static readonly LinterRulesProvider linterRulesProvider = new();
 
-        public static BicepCompilationManager CreateCompilationManager(DocumentUri documentUri, string fileContents, bool upsertCompilation = false)
+        public static BicepCompilationManager CreateCompilationManager(DocumentUri documentUri, string fileContents, bool upsertCompilation = false, IWorkspace? workspace = null, IConfigurationManager? configurationManager = null)
         {
+            workspace ??= new Workspace();
             PublishDiagnosticsParams? receivedParams = null;
-
             var document = CreateMockDocument(p => receivedParams = p);
             var server = CreateMockServer(document);
-            BicepCompilationManager bicepCompilationManager = new(server.Object, CreateEmptyCompilationProvider(), new Workspace(), FileResolver, CreateMockScheduler().Object, new ConfigurationManager(new IOFileSystem()), BicepTestConstants.CreateMockTelemetryProvider().Object, linterRulesProvider);
+
+            var bicepCompilationManager = CreateCompilationManager(server.Object, workspace, configurationManager ?? BicepTestConstants.ConfigurationManager);
 
             if (upsertCompilation)
             {
-                bicepCompilationManager.UpsertCompilation(documentUri, version: null, fileContents, LanguageConstants.LanguageId);
+                bicepCompilationManager.OpenCompilation(documentUri, version: null, fileContents, LanguageConstants.LanguageId);
             }
 
             return bicepCompilationManager;
+        }
+
+        public static BicepCompilationManager CreateCompilationManager(ILanguageServerFacade server, IWorkspace workspace, IConfigurationManager configurationManager)
+        {
+            var helper = ServiceBuilder.Create(services => services
+                .AddSingleton<ILanguageServerFacade>(server)
+                .WithAzResourceTypeLoaderFactory(TestTypeHelper.CreateEmptyResourceTypeLoader())
+                .AddSingleton(CreateMockScheduler().Object)
+                .AddSingleton(BicepTestConstants.CreateMockTelemetryProvider().Object)
+                .AddSingleton<ICompilationProvider, BicepCompilationProvider>()
+                .AddSingleton<IWorkspace>(workspace)
+                .WithConfigurationManager(configurationManager)
+                .WithFeatureOverrides(new FeatureProviderOverrides(
+                    // This is necessary to avoid hard-coding a particular version number into a compiled template
+                    AssemblyVersion: BicepTestConstants.DevAssemblyFileVersion))
+                .AddSingleton<BicepCompilationManager>());
+
+            return helper.Construct<BicepCompilationManager>();
         }
 
         public static Mock<ITextDocumentLanguageServer> CreateMockDocument(Action<PublishDiagnosticsParams> callback)
@@ -75,15 +90,20 @@ namespace Bicep.LangServer.UnitTests
             return server;
         }
 
-        public static ICompilationProvider CreateEmptyCompilationProvider()
+        public static ICompilationProvider CreateEmptyCompilationProvider(IConfigurationManager? configurationManager = null)
         {
-            return new BicepCompilationProvider(BicepTestConstants.Features, TestTypeHelper.CreateEmptyProvider(), FileResolver, new ModuleDispatcher(BicepTestConstants.RegistryProvider));
+            var helper = ServiceBuilder.Create(services => services
+                .AddSingleton(TestTypeHelper.CreateEmptyResourceTypeLoader())
+                .AddSingletonIfNotNull<IConfigurationManager>(configurationManager)
+                .AddSingleton<BicepCompilationProvider>());
+
+            return helper.Construct<BicepCompilationProvider>();
         }
 
         public static Mock<IModuleRestoreScheduler> CreateMockScheduler()
         {
             var scheduler = Repository.Create<IModuleRestoreScheduler>();
-            scheduler.Setup(m => m.RequestModuleRestore(It.IsAny<ICompilationManager>(), It.IsAny<DocumentUri>(), It.IsAny<IEnumerable<ModuleDeclarationSyntax>>(), It.IsAny<RootConfiguration>()));
+            scheduler.Setup(m => m.RequestModuleRestore(It.IsAny<ICompilationManager>(), It.IsAny<DocumentUri>(), It.IsAny<IEnumerable<ArtifactReference>>()));
 
             return scheduler;
         }

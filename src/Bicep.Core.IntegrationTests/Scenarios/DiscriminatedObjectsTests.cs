@@ -1,11 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Linq;
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Parsing;
 using Bicep.Core.Resources;
+using Bicep.Core.Text;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
+using Bicep.Core.UnitTests;
 using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
 using FluentAssertions;
@@ -25,31 +27,35 @@ namespace Bicep.Core.IntegrationTests.Scenarios
                 new ResourceTypeComponents(
                     ResourceTypeReference.Parse("Rp.A/parent@2020-10-01"),
                     ResourceScope.ResourceGroup,
+                    ResourceScope.None,
+                    ResourceFlags.None,
                     TestTypeHelper.CreateObjectType(
                         "Rp.A/parent@2020-10-01",
                         ("name", LanguageConstants.String, TypePropertyFlags.Required | TypePropertyFlags.SystemProperty | TypePropertyFlags.DeployTimeConstant))),
                 new ResourceTypeComponents(
                     ResourceTypeReference.Parse("Rp.A/parent/child@2020-10-01"),
                     ResourceScope.ResourceGroup,
+                    ResourceScope.None,
+                    ResourceFlags.None,
                     TestTypeHelper.CreateDiscriminatedObjectType(
                         "Rp.A/parent/child@2020-10-01",
                         "name",
                         TestTypeHelper.CreateObjectType(
                             "Val1Type",
-                            ("name", new StringLiteralType("val1"), TypePropertyFlags.Required | TypePropertyFlags.SystemProperty | TypePropertyFlags.DeployTimeConstant),
+                            ("name", TypeFactory.CreateStringLiteralType("val1"), TypePropertyFlags.Required | TypePropertyFlags.SystemProperty | TypePropertyFlags.DeployTimeConstant),
                             ("properties", TestTypeHelper.CreateObjectType(
                                 "properties",
                                 ("onlyOnVal1", LanguageConstants.Bool)), TypePropertyFlags.Required)),
                         TestTypeHelper.CreateObjectType(
                             "Val2Type",
-                            ("name", new StringLiteralType("val2"), TypePropertyFlags.Required | TypePropertyFlags.SystemProperty | TypePropertyFlags.DeployTimeConstant),
+                            ("name", TypeFactory.CreateStringLiteralType("val2"), TypePropertyFlags.Required | TypePropertyFlags.SystemProperty | TypePropertyFlags.DeployTimeConstant),
                             ("properties", TestTypeHelper.CreateObjectType(
                                 "properties",
                                 ("onlyOnVal2", LanguageConstants.Bool)), TypePropertyFlags.Required)))),
             };
 
             var result = CompilationHelper.Compile(
-                TestTypeHelper.CreateAzResourceTypeLoaderWithTypes(customTypes),
+                TestTypeHelper.CreateResourceTypeLoaderWithTypes(customTypes),
                 ("main.bicep", @"
 resource test 'Rp.A/parent@2020-10-01' = {
   name: 'test'
@@ -87,7 +93,7 @@ resource test5 'Rp.A/parent/child@2020-10-01' existing = {
             result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
 
             var failedResult = CompilationHelper.Compile(
-                TestTypeHelper.CreateAzResourceTypeLoaderWithTypes(customTypes),
+                TestTypeHelper.CreateResourceTypeLoaderWithTypes(customTypes),
                 ("main.bicep", @"
 resource test 'Rp.A/parent@2020-10-01' = {
   name: 'test'
@@ -96,7 +102,7 @@ resource test 'Rp.A/parent@2020-10-01' = {
 // parent-property child resource
 resource test4 'Rp.A/parent/child@2020-10-01' = {
   parent: test
-  name: 'notAValidVal'
+  name: 'notAValidVal1'
   properties: {
     onlyOnEnum: true
   }
@@ -105,13 +111,13 @@ resource test4 'Rp.A/parent/child@2020-10-01' = {
 // 'existing' parent-property child resource
 resource test5 'Rp.A/parent/child@2020-10-01' existing = {
   parent: test
-  name: 'notAValidVal'
+  name: 'notAValidVal2'
 }
 "));
 
             failedResult.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[] {
-                ("BCP036", DiagnosticLevel.Error, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal'\"."),
-                ("BCP036", DiagnosticLevel.Error, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal'\"."),
+                ("BCP036", DiagnosticLevel.Warning, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal1'\". If this is a resource type definition inaccuracy, report it using https://aka.ms/bicep-type-issues."),
+                ("BCP036", DiagnosticLevel.Warning, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal2'\". If this is a resource type definition inaccuracy, report it using https://aka.ms/bicep-type-issues."),
             });
         }
 
@@ -123,22 +129,26 @@ resource test5 'Rp.A/parent/child@2020-10-01' existing = {
                 new ResourceTypeComponents(
                     ResourceTypeReference.Parse("Rp.A/parent@2020-10-01"),
                     ResourceScope.ResourceGroup,
+                    ResourceScope.None,
+                    ResourceFlags.None,
                     TestTypeHelper.CreateObjectType(
                         "Rp.A/parent@2020-10-01",
                         ("name", LanguageConstants.String))),
                 new ResourceTypeComponents(
                     ResourceTypeReference.Parse("Rp.A/parent/child@2020-10-01"),
                     ResourceScope.ResourceGroup,
+                    ResourceScope.None,
+                    ResourceFlags.None,
                     TestTypeHelper.CreateObjectType(
                         "Rp.A/parent/child@2020-10-01",
-                        ("name", TypeHelper.CreateTypeUnion(new StringLiteralType("val1"), new StringLiteralType("val2"))),
+                        ("name", TypeHelper.CreateTypeUnion(TypeFactory.CreateStringLiteralType("val1"), TypeFactory.CreateStringLiteralType("val2"))),
                             ("properties", TestTypeHelper.CreateObjectType(
                                 "properties",
                                 ("onlyOnEnum", LanguageConstants.Bool))))),
             };
 
             var result = CompilationHelper.Compile(
-                TestTypeHelper.CreateAzResourceTypeLoaderWithTypes(customTypes),
+                TestTypeHelper.CreateResourceTypeLoaderWithTypes(customTypes),
                 ("main.bicep", @"
 resource test 'Rp.A/parent@2020-10-01' = {
   name: 'test'
@@ -176,7 +186,7 @@ resource test5 'Rp.A/parent/child@2020-10-01' existing = {
             result.ExcludingLinterDiagnostics().Should().NotHaveAnyDiagnostics();
 
             var failedResult = CompilationHelper.Compile(
-                TestTypeHelper.CreateAzResourceTypeLoaderWithTypes(customTypes),
+                TestTypeHelper.CreateResourceTypeLoaderWithTypes(customTypes),
                 ("main.bicep", @"
 resource test 'Rp.A/parent@2020-10-01' = {
   name: 'test'
@@ -185,7 +195,7 @@ resource test 'Rp.A/parent@2020-10-01' = {
 // parent-property child resource
 resource test4 'Rp.A/parent/child@2020-10-01' = {
   parent: test
-  name: 'notAValidVal'
+  name: 'notAValidVal1'
   properties: {
     onlyOnEnum: true
   }
@@ -194,13 +204,13 @@ resource test4 'Rp.A/parent/child@2020-10-01' = {
 // 'existing' parent-property child resource
 resource test5 'Rp.A/parent/child@2020-10-01' existing = {
   parent: test
-  name: 'notAValidVal'
+  name: 'notAValidVal2'
 }
 "));
 
             failedResult.ExcludingLinterDiagnostics().Should().HaveDiagnostics(new[] {
-                ("BCP036", DiagnosticLevel.Error, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal'\"."),
-                ("BCP036", DiagnosticLevel.Error, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal'\"."),
+                ("BCP036", DiagnosticLevel.Error, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal1'\"."),
+                ("BCP036", DiagnosticLevel.Error, "The property \"name\" expected a value of type \"'val1' | 'val2'\" but the provided value is of type \"'notAValidVal2'\"."),
             });
         }
 
@@ -231,9 +241,7 @@ resource service 'Microsoft.ServiceFabric/clusters/applications/services@2020-12
                 ("BCP089", DiagnosticLevel.Warning, "The property \"PartitionScheme\" is not allowed on objects of type \"'Named' | 'Singleton' | 'UniformInt64Range'\". Did you mean \"partitionScheme\"?"),
             });
 
-            var diagnosticWithCodeFix = result.Diagnostics.OfType<FixableDiagnostic>().Single();
-            var codeFix = diagnosticWithCodeFix.Fixes.Single();
-            var codeReplacement = codeFix.Replacements.Single();
+            var codeReplacement = result.Diagnostics.SelectMany(x => x.Fixes).SelectMany(x => x.Replacements).Single();
 
             codeReplacement.Span.Should().Be(new TextSpan(212, 15));
             codeReplacement.Text.Should().Be("partitionScheme");
@@ -279,7 +287,7 @@ resource mainResource 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
         [TestMethod]
         public void Issue_4668_2()
         {
-            var result = CompilationHelper.Compile(new CompilationHelper.CompilationHelperContext(NamespaceProvider: BuiltInTestTypes.Create()), @"
+            var result = CompilationHelper.Compile(new ServiceBuilder().WithAzResources(BuiltInTestTypes.Types), @"
 param properties object
 
 resource mainResource 'Test.Rp/discriminatedPropertiesTests@2020-01-01' = {
@@ -296,7 +304,7 @@ resource mainResource 'Test.Rp/discriminatedPropertiesTests@2020-01-01' = {
         [TestMethod]
         public void Issue_4668_3()
         {
-            var result = CompilationHelper.Compile(new CompilationHelper.CompilationHelperContext(NamespaceProvider: BuiltInTestTypes.Create()), @"
+            var result = CompilationHelper.Compile(new ServiceBuilder().WithAzResources(BuiltInTestTypes.Types), @"
 @allowed([
   'PropertiesA'
   'PropertiesB'
@@ -324,7 +332,7 @@ resource mainResource 'Test.Rp/discriminatedPropertiesTests2@2020-01-01' = {
         [TestMethod]
         public void Issue_4668_4()
         {
-            var result = CompilationHelper.Compile(new CompilationHelper.CompilationHelperContext(NamespaceProvider: BuiltInTestTypes.Create()), @"
+            var result = CompilationHelper.Compile(new ServiceBuilder().WithAzResources(BuiltInTestTypes.Types), @"
 param propType string
 param values object
 

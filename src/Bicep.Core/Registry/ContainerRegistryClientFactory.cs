@@ -2,11 +2,9 @@
 // Licensed under the MIT License.
 
 using Azure.Containers.ContainerRegistry;
-using Azure.Containers.ContainerRegistry.Specialized;
 using Bicep.Core.Configuration;
 using Bicep.Core.Registry.Auth;
 using Bicep.Core.Tracing;
-using System;
 
 namespace Bicep.Core.Registry
 {
@@ -19,24 +17,44 @@ namespace Bicep.Core.Registry
             this.credentialFactory = credentialFactory;
         }
 
-        public ContainerRegistryBlobClient CreateAuthenticatedBlobClient(RootConfiguration configuration, Uri registryUri, string repository)
+        public ContainerRegistryContentClient CreateAuthenticatedBlobClient(CloudConfiguration cloud, Uri registryUri, string repository)
         {
             var options = new ContainerRegistryClientOptions();
             options.Diagnostics.ApplySharedContainerRegistrySettings();
-            options.Audience = new ContainerRegistryAudience(configuration.Cloud.ResourceManagerAudience);
+            options.Audience = new ContainerRegistryAudience(cloud.ResourceManagerAudience);
 
-            var credential = this.credentialFactory.CreateChain(configuration.Cloud.CredentialPrecedence, configuration.Cloud.ActiveDirectoryAuthorityUri);
+            var credential = this.credentialFactory.CreateChain(cloud.CredentialPrecedence, cloud.CredentialOptions, cloud.ActiveDirectoryAuthorityUri);
 
-            return new(registryUri, credential, repository, options);
+            return new(registryUri, repository, credential, options);
         }
 
-        public ContainerRegistryBlobClient CreateAnonymouosBlobClient(RootConfiguration configuration, Uri registryUri, string repository)
+        public ContainerRegistryContentClient CreateAnonymousBlobClient(CloudConfiguration cloud, Uri registryUri, string repository)
         {
             var options = new ContainerRegistryClientOptions();
             options.Diagnostics.ApplySharedContainerRegistrySettings();
-            options.Audience = new ContainerRegistryAudience(configuration.Cloud.ResourceManagerAudience);
+            options.Audience = new ContainerRegistryAudience(cloud.ResourceManagerAudience);
 
             return new(registryUri, repository, options);
+        }
+
+        public ContainerRegistryClient CreateAuthenticatedContainerClient(CloudConfiguration cloud, Uri registryUri)
+        {
+            var options = new ContainerRegistryClientOptions();
+            options.Diagnostics.ApplySharedContainerRegistrySettings();
+            options.Audience = new ContainerRegistryAudience(cloud.ResourceManagerAudience);
+
+            var credential = this.credentialFactory.CreateChain(cloud.CredentialPrecedence, cloud.CredentialOptions, cloud.ActiveDirectoryAuthorityUri);
+
+            return new(registryUri, credential, options);
+        }
+
+        public ContainerRegistryClient CreateAnonymousContainerClient(CloudConfiguration cloud, Uri registryUri)
+        {
+            var options = new ContainerRegistryClientOptions();
+            options.Diagnostics.ApplySharedContainerRegistrySettings();
+            options.Audience = new ContainerRegistryAudience(cloud.ResourceManagerAudience);
+
+            return new(registryUri, options);
         }
     }
 }

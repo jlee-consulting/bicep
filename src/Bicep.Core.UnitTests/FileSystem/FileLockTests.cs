@@ -1,17 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Bicep.Core.FileSystem;
 using Bicep.Core.UnitTests.Utils;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace Bicep.Core.UnitTests.FileSystem
 {
@@ -71,7 +66,7 @@ namespace Bicep.Core.UnitTests.FileSystem
             Directory.CreateDirectory(lockDir);
             var fileName = Path.Combine(lockDir, "locktest");
 
-            var @lock = FileLock.TryAcquire(fileName);
+            var @lock = FileLock.TryAcquire(BicepTestConstants.FileSystem, fileName);
             @lock.Should().NotBeNull();
             using (@lock)
             {
@@ -91,7 +86,7 @@ namespace Bicep.Core.UnitTests.FileSystem
             Directory.CreateDirectory(lockDir);
             var fileName = Path.Combine(lockDir, "locktest");
 
-            using (var @lock = FileLock.TryAcquire(fileName))
+            using (var @lock = FileLock.TryAcquire(BicepTestConstants.FileSystem, fileName))
             {
                 @lock.Should().NotBeNull();
                 // extra call to Dispose() is intentional
@@ -107,7 +102,7 @@ namespace Bicep.Core.UnitTests.FileSystem
 
             while (sw.Elapsed < acquireTimeout)
             {
-                var acquired = FileLock.TryAcquire(name);
+                var acquired = FileLock.TryAcquire(BicepTestConstants.FileSystem, name);
                 if (acquired is not null)
                 {
                     return acquired;

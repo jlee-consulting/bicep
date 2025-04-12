@@ -9,6 +9,8 @@ jobs:
   main:
     name: Update Baselines
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     env:
       # don't print dotnet logo
@@ -18,16 +20,16 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: true
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # avoid shallow clone so nbgv can do its work.
 
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v2
+        uses: actions/setup-dotnet@v4
       
       - name: Test
         continue-on-error: true
-        run: dotnet test --filter "TestCategory=Baseline" -- 'TestRunParameters.Parameter(name="SetBaseLine", value="true")'
+        run: dotnet test -- --filter "TestCategory=Baseline" --test-parameter SetBaseLine=true
       
       - name: Commit baselines
         run: |

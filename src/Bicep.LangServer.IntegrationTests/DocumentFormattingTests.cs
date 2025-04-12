@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using System.Diagnostics.CodeAnalysis;
-using System.Threading.Tasks;
 using Bicep.LangServer.IntegrationTests.Helpers;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -13,7 +12,6 @@ namespace Bicep.LangServer.IntegrationTests
 {
 
     [TestClass]
-    [SuppressMessage("Style", "VSTHRD200:Use \"Async\" suffix for async methods", Justification = "Test methods do not need to follow this convention.")]
     public class DocumentFormattingTests
     {
         [NotNull]
@@ -22,16 +20,12 @@ namespace Bicep.LangServer.IntegrationTests
         [TestMethod]
         public async Task RequestDocumentFormattingShouldReturnFullRangeTextEdit()
         {
+            var diagsListener = new MultipleMessageListener<PublishDiagnosticsParams>();
             var documentUri = DocumentUri.From("/template.bicep");
-            var diagnosticsReceived = new TaskCompletionSource<PublishDiagnosticsParams>();
 
-            using var helper = await LanguageServerHelper.StartServerWithClientConnectionAsync(this.TestContext, options =>
-            {
-                options.OnPublishDiagnostics(diagnostics =>
-                {
-                    diagnosticsReceived.SetResult(diagnostics);
-                });
-            });
+            using var helper = await LanguageServerHelper.StartServer(
+                this.TestContext,
+                options => options.OnPublishDiagnostics(diagsListener.AddMessage));
             var client = helper.Client;
 
             // client opens the document
@@ -50,7 +44,7 @@ resource myResource 'myRP/provider@2020-11-01' = {
 }
 
 module myModule './module.bicep' = {
-  name: 'test' 
+  name: 'test'
 }
 
 output myOutput string = 'value'", 0));
@@ -72,6 +66,57 @@ output myOutput string = 'value'", 0));
 
             textEditContainer.Should().NotBeNull();
             textEditContainer.Should().HaveCount(1);
+        }
+
+        [TestMethod]
+        public async Task Formatting_is_supported_for_params_files()
+        {
+            using var server = await MultiFileLanguageServerHelper.StartLanguageServer(TestContext);
+            var helper = new ServerRequestHelper(TestContext, server);
+
+            await helper.OpenFile("/main.bicep", """
+                param foo string
+                param bar object
+                param baz array
+                """);
+
+            var file = await helper.OpenFile("/main.bicepparam", """
+
+                using      'main.bicep'
+
+                     param foo =      'test'
+
+                param bar = {
+                          abc    : { }
+                    def: [1,2,3]
+                }
+
+                param baz = [
+                    'abc',{def:'ghi'}
+                  'test'
+                ]
+                            
+                            
+                """);
+
+            var textEdit = await file.Format();
+            textEdit.NewText.Should().Be("""
+                using 'main.bicep'
+
+                param foo = 'test'
+
+                param bar = {
+                  abc: {}
+                  def: [1, 2, 3]
+                }
+
+                param baz = [
+                  'abc'
+                  { def: 'ghi' }
+                  'test'
+                ]
+
+                """);
         }
     }
 }

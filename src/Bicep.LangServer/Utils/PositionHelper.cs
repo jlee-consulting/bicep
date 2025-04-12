@@ -6,6 +6,7 @@ using Bicep.Core.Syntax;
 using Bicep.Core.Text;
 using Bicep.LanguageServer.Extensions;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
 namespace Bicep.LanguageServer.Utils
 {
@@ -15,6 +16,13 @@ namespace Bicep.LanguageServer.Utils
         {
             (int line, int character) = TextCoordinateConverter.GetPosition(lineStarts, offset);
             return new Position(line, character);
+        }
+
+        public static Range GetRange(ImmutableArray<int> lineStarts, int startOffset, int endOffset)
+        {
+            var start = TextCoordinateConverter.GetPosition(lineStarts, startOffset);
+            var end = TextCoordinateConverter.GetPosition(lineStarts, endOffset);
+            return new Range(start, end);
         }
 
         public static int GetOffset(ImmutableArray<int> lineStarts, Position position) => TextCoordinateConverter.GetOffset(lineStarts, position.Line, position.Character);

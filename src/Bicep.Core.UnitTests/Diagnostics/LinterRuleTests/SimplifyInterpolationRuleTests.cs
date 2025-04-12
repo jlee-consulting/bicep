@@ -6,19 +6,19 @@ using Bicep.Core.Analyzers.Linter.Rules;
 using Bicep.Core.UnitTests.Assertions;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Linq;
 
 namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
 {
     [TestClass]
     public class SimplifyInterpolationRuleTests : LinterRuleTestsBase
     {
-        private void ExpectPass(string text, OnCompileErrors onCompileErrors = OnCompileErrors.Fail)
+        private void ExpectPass(string text, Options? options = null)
         {
-            AssertLinterRuleDiagnostics(SimplifyInterpolationRule.Code, text, onCompileErrors, diags =>
-           {
-               diags.Should().HaveCount(0, $"expecting linter rule to pass");
-           });
+            AssertLinterRuleDiagnostics(SimplifyInterpolationRule.Code, text, diags =>
+                {
+                    diags.Should().HaveCount(0, $"expecting linter rule to pass");
+                },
+                options);
         }
 
         private void ExpectDiagnosticWithFix(string text, string expectedFix)
@@ -27,9 +27,9 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
             {
                 diags.Should().HaveCount(1, $"expected one fix per testcase");
 
-                diags.First().As<IBicepAnalyerFixableDiagnostic>().Fixes.Should().HaveCount(1);
-                diags.First().As<IBicepAnalyerFixableDiagnostic>().Fixes.First().Replacements.Should().HaveCount(1);
-                diags.First().As<IBicepAnalyerFixableDiagnostic>().Fixes.First().Replacements.First().Text.Should().Be(expectedFix);
+                diags.First().Fixes.Should().HaveCount(1);
+                diags.First().Fixes.First().Replacements.Should().HaveCount(1);
+                diags.First().Fixes.First().Replacements.First().Text.Should().Be(expectedFix);
             });
         }
 
@@ -283,7 +283,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [DataTestMethod]
         public void SyntaxErrors_ExpectNoFixes(string text)
         {
-            ExpectPass(text, OnCompileErrors.Ignore);
+            ExpectPass(text, new Options(OnCompileErrors.Ignore));
         }
     }
 }

@@ -4,6 +4,7 @@
 declare const window: Record<string, unknown>;
 
 // See https://jestjs.io/docs/manual-mocks#mocking-methods-which-are-not-implemented-in-jsdom.
+// eslint-disable-next-line jest/require-hook
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: jest.fn().mockImplementation(query => ({
@@ -25,6 +26,8 @@ import { spawnSync } from 'child_process';
 import { BicepLanguage } from '../src/bicep';
 import { editor, languages } from 'monaco-editor-core';
 import { escape } from 'html-escaper';
+import { env } from 'process';
+import { expectFileContents, baselineRecordEnabled } from './utils';
 
 const tokenToHljsClass: Record<string, string | null> = {
   'string.bicep': 'string',
@@ -49,15 +52,11 @@ async function getTokensByLine(content: string) {
   }));
 }
 
-async function writeBaseline(filePath: string) {
-  const baselineBaseName = basename(filePath, extname(filePath));
-  const baselineFilePath = path.join(dirname(filePath), `${baselineBaseName}.html`);
+async function generateBaseline(inputFilePath: string) {
+  const baselineBaseName = basename(inputFilePath, extname(inputFilePath));
+  const baselineFilePath = path.join(dirname(inputFilePath), `${baselineBaseName}.html`);
 
-  let diffBefore = '';
-  const bicepFile = await readFile(filePath, { encoding: 'utf-8' });
-  try {
-    diffBefore = await readFile(baselineFilePath, { encoding: 'utf-8' });
-  } catch {} // ignore and create the baseline file anyway
+  const bicepFile = await readFile(inputFilePath, { encoding: 'utf-8' });
 
   let html = '';
   const tokensByLine = await getTokensByLine(bicepFile);
@@ -92,7 +91,11 @@ async function writeBaseline(filePath: string) {
     html += '\n';
   }
 
-  const diffAfter = `
+  const expected = `
+<!--
+  Preview this file by prepending http://htmlpreview.github.io/? to its URL
+  e.g. http://htmlpreview.github.io/?https://raw.githubusercontent.com/Azure/bicep/main/src/monarch/test/baselines/${baselineBaseName}.html
+-->
 <html>
   <head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.7.2/styles/default.min.css">
@@ -104,47 +107,36 @@ ${html}
   </body>
 </html>`;
 
-  const output = {
-    diffBefore: diffBefore.replace(/\r\n/g, '\n'),
-    diffAfter: diffAfter.replace(/\r\n/g, '\n'),
+  return {
+    expected: expected.replace(/\r\n/g, '\n'),
     baselineFilePath,
   };
-
-  await writeFile(baselineFilePath, output.diffAfter, { encoding: 'utf-8' });
-
-  return output;
 }
 
 const baselinesDir = `${__dirname}/baselines`;
 
 const baselineFiles = readdirSync(baselinesDir)
-  .filter(p => extname(p) === '.bicep')
+  .filter(p => extname(p) === '.bicep' || extname(p) === '.bicepparam')
   .map(p => path.join(baselinesDir, p));
 
 for (const filePath of baselineFiles) {
-  describe(filePath, () => {
-    let result = {
-      baselineFilePath: '',
-      diffBefore: '',
-      diffAfter: ''
-    };
-
-    beforeAll(async () => {
-      result = await writeBaseline(filePath);
-    });
-
-    if (!basename(filePath).startsWith('bad_')) {
+  describe(`Baseline: ${filePath}`, () => {
+    if (!basename(filePath).startsWith('invalid_')) {
       // skip the invalid files - we don't expect them to compile
 
       it('can be compiled', async () => {
         const cliCsproj = `${__dirname}/../../Bicep.Cli/Bicep.Cli.csproj`;
 
+        // eslint-disable-next-line jest/no-conditional-in-test
         if (!existsSync(cliCsproj)) {
-          fail(`Unable to find '${cliCsproj}'`);
-          return;
+          throw new Error(`Unable to find '${cliCsproj}'`);
         }
-
-        const result = spawnSync(`dotnet`, ['run', '-p', cliCsproj, 'build', '--stdout', filePath], { encoding: 'utf-8' });
+        
+        const subCommand = extname(filePath) === '.bicepparam' ? 'build-params' : 'build';
+        const result = spawnSync(`dotnet`, ['run', '-p', cliCsproj, subCommand, '--stdout', filePath], {
+          encoding: 'utf-8',
+          env,
+        });
 
         // NOTE - if stderr or status are null, this indicates we were unable to invoke the exe (missing file, or hasn't had 'chmod +x' run)
         expect(result.error).toBeUndefined();
@@ -153,8 +145,17 @@ for (const filePath of baselineFiles) {
       });
     }
 
-    it('baseline matches expected', () => {
-      expect(result.diffBefore).toEqual(result.diffAfter);
+    it('baseline matches expected', async () => {
+      const { expected, baselineFilePath } = await generateBaseline(filePath);
+
+      await expectFileContents(baselineFilePath, expected);
     });
   });
 }
+
+describe('Test suite', () => {
+  it('should not succeed if BASELINE_RECORD is set to true', () => {
+    // This test just ensures the suite doesn't pass in 'record' mode
+    expect(baselineRecordEnabled).toBeFalsy();
+  });
+});

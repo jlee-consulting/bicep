@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System;
-using Bicep.Cli.Services;
+using System.IO.Abstractions;
 using Bicep.Cli.Arguments;
+using Bicep.Cli.Services;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -11,23 +11,33 @@ namespace Bicep.Cli.UnitTests
     [TestClass]
     public class ArgumentParserTests
     {
+        private static readonly IOContext IO = new(new StringWriter(), new StringWriter());
+
+        private static readonly IFileSystem FileSystem = new FileSystem();
+
         [TestMethod]
         public void Empty_parameters_should_return_null()
         {
-            var arguments = ArgumentParser.TryParse(Array.Empty<string>());
+            var arguments = ArgumentParser.TryParse([], IO, FileSystem);
             arguments.Should().BeNull();
         }
 
         [TestMethod]
         public void Wrong_command_should_return_null()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "wrong" });
+            var arguments = ArgumentParser.TryParse(["wrong"], IO, FileSystem);
             arguments.Should().BeNull();
         }
 
         [DataTestMethod]
-        [DataRow(new[] { "build" }, "The input file path was not specified")]
-        [DataRow(new[] { "build", "--stdout" }, "The input file path was not specified")]
+        // build
+        [DataRow(new[] { "build" }, "Either the input file path or the --pattern parameter must be specified")]
+        [DataRow(new[] { "build", "foo.bicep", "--pattern", "*.bicep" }, "The input file path and the --pattern parameter cannot both be specified")]
+        [DataRow(new[] { "build", "--pattern" }, "The --pattern parameter expects an argument")]
+        [DataRow(new[] { "build", "--pattern", "*.bicep", "--stdout" }, "The --stdout parameter cannot be used with the --pattern parameter")]
+        [DataRow(new[] { "build", "--pattern", "*.bicep", "--outdir", "foo" }, "The --outdir parameter cannot be used with the --pattern parameter")]
+        [DataRow(new[] { "build", "--pattern", "*.bicep", "--outfile", "foo" }, "The --outfile parameter cannot be used with the --pattern parameter")]
+        [DataRow(new[] { "build", "--stdout" }, "Either the input file path or the --pattern parameter must be specified")]
         [DataRow(new[] { "build", "file1", "file2" }, "The input file path cannot be specified multiple times")]
         [DataRow(new[] { "build", "--wibble" }, "Unrecognized parameter \"--wibble\"")]
         [DataRow(new[] { "build", "--outdir" }, "The --outdir parameter expects an argument")]
@@ -38,6 +48,24 @@ namespace Bicep.Cli.UnitTests
         [DataRow(new[] { "build", "--stdout", "--outdir", "dir1", "file1" }, "The --outdir and --stdout parameters cannot both be used")]
         [DataRow(new[] { "build", "--outfile", "dir1", "--outdir", "dir2", "file1" }, "The --outdir and --outfile parameters cannot both be used")]
         [DataRow(new[] { "build", "--outdir", "dir1", "file1" }, "The specified output directory \"*\" does not exist.")]
+        // build-params
+        [DataRow(new[] { "build-params" }, "Either the input file path or the --pattern parameter must be specified")]
+        [DataRow(new[] { "build-params", "foo.bicepparam", "--pattern", "*.bicepparam" }, "The input file path and the --pattern parameter cannot both be specified")]
+        [DataRow(new[] { "build-params", "--pattern" }, "The --pattern parameter expects an argument")]
+        [DataRow(new[] { "build-params", "--pattern", "*.bicepparam", "--stdout" }, "The --stdout parameter cannot be used with the --pattern parameter")]
+        [DataRow(new[] { "build-params", "--pattern", "*.bicepparam", "--outdir", "foo" }, "The --outdir parameter cannot be used with the --pattern parameter")]
+        [DataRow(new[] { "build-params", "--pattern", "*.bicepparam", "--outfile", "foo" }, "The --outfile parameter cannot be used with the --pattern parameter")]
+        [DataRow(new[] { "build-params", "--stdout" }, "Either the input file path or the --pattern parameter must be specified")]
+        [DataRow(new[] { "build-params", "file1", "file2" }, "The input file path cannot be specified multiple times")]
+        [DataRow(new[] { "build-params", "--wibble" }, "Unrecognized parameter \"--wibble\"")]
+        [DataRow(new[] { "build-params", "--outdir" }, "The --outdir parameter expects an argument")]
+        [DataRow(new[] { "build-params", "--outdir", "dir1", "--outdir", "dir2" }, "The --outdir parameter cannot be specified twice")]
+        [DataRow(new[] { "build-params", "--outfile" }, "The --outfile parameter expects an argument")]
+        [DataRow(new[] { "build-params", "--outfile", "dir1", "--outfile", "dir2" }, "The --outfile parameter cannot be specified twice")]
+        [DataRow(new[] { "build-params", "--stdout", "--outfile", "dir1", "file1" }, "The --outfile and --stdout parameters cannot both be used")]
+        [DataRow(new[] { "build-params", "--stdout", "--outdir", "dir1", "file1" }, "The --outdir and --stdout parameters cannot both be used")]
+        [DataRow(new[] { "build-params", "--outfile", "dir1", "--outdir", "dir2", "file1" }, "The --outdir and --outfile parameters cannot both be used")]
+        // decompile
         [DataRow(new[] { "decompile" }, "The input file path was not specified")]
         [DataRow(new[] { "decompile", "--stdout" }, "The input file path was not specified")]
         [DataRow(new[] { "decompile", "file1", "file2" }, "The input file path cannot be specified multiple times")]
@@ -50,6 +78,7 @@ namespace Bicep.Cli.UnitTests
         [DataRow(new[] { "decompile", "--stdout", "--outdir", "dir1", "file1" }, "The --outdir and --stdout parameters cannot both be used")]
         [DataRow(new[] { "decompile", "--outfile", "dir1", "--outdir", "dir2", "file1" }, "The --outdir and --outfile parameters cannot both be used")]
         [DataRow(new[] { "decompile", "--outdir", "dir1", "file1" }, "The specified output directory \"*\" does not exist.")]
+        // publish
         [DataRow(new[] { "publish" }, "The input file path was not specified.")]
         [DataRow(new[] { "publish", "--fake" }, "Unrecognized parameter \"--fake\"")]
         [DataRow(new[] { "publish", "--target" }, "The --target parameter expects an argument.")]
@@ -57,12 +86,25 @@ namespace Bicep.Cli.UnitTests
         [DataRow(new[] { "publish", "--target", "foo", "--target", "foo2" }, "The --target parameter cannot be specified twice.")]
         [DataRow(new[] { "publish", "file" }, "The target module was not specified.")]
         [DataRow(new[] { "publish", "file", "file2" }, "The input file path cannot be specified multiple times.")]
-        [DataRow(new[] { "restore" }, "The input file path was not specified.")]
+        // restore
+        [DataRow(new[] { "restore" }, "Either the input file path or the --pattern parameter must be specified")]
+        [DataRow(new[] { "restore", "foo.bicep", "--pattern", "*.bicep" }, "The input file path and the --pattern parameter cannot both be specified")]
+        [DataRow(new[] { "restore", "--pattern" }, "The --pattern parameter expects an argument")]
         [DataRow(new[] { "restore", "--fake" }, "Unrecognized parameter \"--fake\"")]
-        [DataRow(new[] { "restore", "file1", "file2" }, "The input file path cannot be specified multiple times.")]
+        [DataRow(new[] { "restore", "file1", "file2" }, "The input file path cannot be specified multiple times")]
+        // lint
+        [DataRow(new[] { "lint" }, "Either the input file path or the --pattern parameter must be specified")]
+        [DataRow(new[] { "lint", "foo.bicep", "--pattern", "*.bicep" }, "The input file path and the --pattern parameter cannot both be specified")]
+        [DataRow(new[] { "lint", "--pattern" }, "The --pattern parameter expects an argument")]
+        [DataRow(new[] { "lint", "--fake" }, "Unrecognized parameter \"--fake\"")]
+        // format
+        [DataRow(new[] { "format" }, "Either the input file path or the --pattern parameter must be specified")]
+        [DataRow(new[] { "format", "foo.bicep", "--pattern", "*.bicep" }, "The input file path and the --pattern parameter cannot both be specified")]
+        [DataRow(new[] { "format", "--pattern" }, "The --pattern parameter expects an argument")]
+        [DataRow(new[] { "format", "--fake" }, "Unrecognized parameter \"--fake\"")]
         public void Invalid_args_trigger_validation_exceptions(string[] parameters, string expectedException)
         {
-            Action parseFunc = () => ArgumentParser.TryParse(parameters);
+            Action parseFunc = () => ArgumentParser.TryParse(parameters, IO, FileSystem);
 
             parseFunc.Should().Throw<CommandLineException>().WithMessage(expectedException);
         }
@@ -70,7 +112,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void BuildOneFile_ShouldReturnOneFile()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "build", "file1" });
+            var arguments = ArgumentParser.TryParse(["build", "file1"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -85,7 +127,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void BuildOneFileStdOut_ShouldReturnOneFileAndStdout()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "build", "--stdout", "file1" });
+            var arguments = ArgumentParser.TryParse(["build", "--stdout", "file1"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -100,7 +142,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void BuildOneFileStdOut_and_no_restore_ShouldReturnOneFileAndStdout()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "build", "--stdout", "--no-restore", "file1" });
+            var arguments = ArgumentParser.TryParse(["build", "--stdout", "--no-restore", "file1"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -115,7 +157,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void BuildOneFileStdOutAllCaps_ShouldReturnOneFileAndStdout()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "build", "--STDOUT", "file1" });
+            var arguments = ArgumentParser.TryParse(["build", "--STDOUT", "file1"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -131,7 +173,7 @@ namespace Bicep.Cli.UnitTests
         public void Build_with_outputdir_parameter_should_parse_correctly()
         {
             // Use relative . to ensure directory exists else the parser will throw.
-            var arguments = ArgumentParser.TryParse(new[] { "build", "--outdir", ".", "file1" });
+            var arguments = ArgumentParser.TryParse(["build", "--outdir", ".", "file1"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -147,7 +189,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void Build_with_outputfile_parameter_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "build", "--outfile", "jsonFile", "file1" });
+            var arguments = ArgumentParser.TryParse(["build", "--outfile", "jsonFile", "file1"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -162,7 +204,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void Build_with_outputfile_and_no_restore_parameter_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "build", "--outfile", "jsonFile", "file1", "--no-restore" });
+            var arguments = ArgumentParser.TryParse(["build", "--outfile", "jsonFile", "file1", "--no-restore"], IO, FileSystem);
             var buildArguments = (BuildArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
@@ -174,114 +216,171 @@ namespace Bicep.Cli.UnitTests
             buildArguments!.NoRestore.Should().BeTrue();
         }
 
+        [TestMethod]
+        public void License_argument_should_return_appropriate_RootArguments_instance()
+        {
+            var arguments = ArgumentParser.TryParse(["--license"], IO, FileSystem);
+
+            arguments.Should().BeOfType<RootArguments>();
+            if (arguments is RootArguments rootArguments)
+            {
+                rootArguments.PrintHelp.Should().BeFalse();
+                rootArguments.PrintVersion.Should().BeFalse();
+                rootArguments.PrintLicense.Should().BeTrue();
+                rootArguments.PrintThirdPartyNotices.Should().BeFalse();
+            }
+        }
+
+        [TestMethod]
+        public void Third_party_notices_argument_should_return_appropriate_RootArguments_instance()
+        {
+            var arguments = ArgumentParser.TryParse(["--third-party-notices"], IO, FileSystem);
+
+            arguments.Should().BeOfType<RootArguments>();
+            if (arguments is RootArguments rootArguments)
+            {
+                rootArguments.PrintHelp.Should().BeFalse();
+                rootArguments.PrintVersion.Should().BeFalse();
+                rootArguments.PrintLicense.Should().BeFalse();
+                rootArguments.PrintThirdPartyNotices.Should().BeTrue();
+            }
+        }
 
         [TestMethod]
         public void Version_argument_should_return_VersionArguments_instance()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "--version" });
+            var arguments = ArgumentParser.TryParse(["--version"], IO, FileSystem);
 
             arguments.Should().BeOfType<RootArguments>();
+            if (arguments is RootArguments rootArguments)
+            {
+                rootArguments.PrintHelp.Should().BeFalse();
+                rootArguments.PrintVersion.Should().BeTrue();
+                rootArguments.PrintLicense.Should().BeFalse();
+                rootArguments.PrintThirdPartyNotices.Should().BeFalse();
+            }
         }
 
         [TestMethod]
         public void Help_argument_should_return_HelpArguments_instance()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "--help" });
+            var arguments = ArgumentParser.TryParse(["--help"], IO, FileSystem);
 
             arguments.Should().BeOfType<RootArguments>();
+            if (arguments is RootArguments rootArguments)
+            {
+                rootArguments.PrintHelp.Should().BeTrue();
+                rootArguments.PrintVersion.Should().BeFalse();
+                rootArguments.PrintLicense.Should().BeFalse();
+                rootArguments.PrintThirdPartyNotices.Should().BeFalse();
+            }
         }
 
         [TestMethod]
         public void Version_argument_should_return_VersionShortArguments_instance()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "-v" });
+            var arguments = ArgumentParser.TryParse(["-v"], IO, FileSystem);
 
             arguments.Should().BeOfType<RootArguments>();
+            if (arguments is RootArguments rootArguments)
+            {
+                rootArguments.PrintHelp.Should().BeFalse();
+                rootArguments.PrintVersion.Should().BeTrue();
+                rootArguments.PrintLicense.Should().BeFalse();
+                rootArguments.PrintThirdPartyNotices.Should().BeFalse();
+            }
         }
 
         [TestMethod]
         public void Help_argument_should_return_HelpShortArguments_instance()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "-h" });
+            var arguments = ArgumentParser.TryParse(["-h"], IO, FileSystem);
 
             arguments.Should().BeOfType<RootArguments>();
+            if (arguments is RootArguments rootArguments)
+            {
+                rootArguments.PrintHelp.Should().BeTrue();
+                rootArguments.PrintVersion.Should().BeFalse();
+                rootArguments.PrintLicense.Should().BeFalse();
+                rootArguments.PrintThirdPartyNotices.Should().BeFalse();
+            }
         }
 
         [TestMethod]
         public void DecompileOneFile_ShouldReturnOneFile()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "decompile", "file1" });
-            var bulidOrDecompileArguments = (DecompileArguments?)arguments;
+            var arguments = ArgumentParser.TryParse(["decompile", "file1"], IO, FileSystem);
+            var buildOrDecompileArguments = (DecompileArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
             Assert.IsNotNull(arguments);
-            bulidOrDecompileArguments!.InputFile.Should().Be("file1");
-            bulidOrDecompileArguments!.OutputToStdOut.Should().BeFalse();
-            bulidOrDecompileArguments!.OutputDir.Should().BeNull();
-            bulidOrDecompileArguments!.OutputFile.Should().BeNull();
+            buildOrDecompileArguments!.InputFile.Should().Be("file1");
+            buildOrDecompileArguments!.OutputToStdOut.Should().BeFalse();
+            buildOrDecompileArguments!.OutputDir.Should().BeNull();
+            buildOrDecompileArguments!.OutputFile.Should().BeNull();
         }
 
         [TestMethod]
         public void DecompileOneFileStdOut_ShouldReturnOneFileAndStdout()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "decompile", "--stdout", "file1" });
-            var bulidOrDecompileArguments = (DecompileArguments?)arguments;
+            var arguments = ArgumentParser.TryParse(["decompile", "--stdout", "file1"], IO, FileSystem);
+            var buildOrDecompileArguments = (DecompileArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
             Assert.IsNotNull(arguments);
-            bulidOrDecompileArguments!.InputFile.Should().Be("file1");
-            bulidOrDecompileArguments!.OutputToStdOut.Should().BeTrue();
-            bulidOrDecompileArguments!.OutputDir.Should().BeNull();
-            bulidOrDecompileArguments!.OutputFile.Should().BeNull();
+            buildOrDecompileArguments!.InputFile.Should().Be("file1");
+            buildOrDecompileArguments!.OutputToStdOut.Should().BeTrue();
+            buildOrDecompileArguments!.OutputDir.Should().BeNull();
+            buildOrDecompileArguments!.OutputFile.Should().BeNull();
         }
 
         [TestMethod]
         public void DecompileOneFileStdOutAllCaps_ShouldReturnOneFileAndStdout()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "decompile", "--STDOUT", "file1" });
-            var bulidOrDecompileArguments = (DecompileArguments?)arguments;
+            var arguments = ArgumentParser.TryParse(["decompile", "--STDOUT", "file1"], IO, FileSystem);
+            var buildOrDecompileArguments = (DecompileArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
             Assert.IsNotNull(arguments);
-            bulidOrDecompileArguments!.InputFile.Should().Be("file1");
-            bulidOrDecompileArguments!.OutputToStdOut.Should().BeTrue();
-            bulidOrDecompileArguments!.OutputDir.Should().BeNull();
-            bulidOrDecompileArguments!.OutputFile.Should().BeNull();
+            buildOrDecompileArguments!.InputFile.Should().Be("file1");
+            buildOrDecompileArguments!.OutputToStdOut.Should().BeTrue();
+            buildOrDecompileArguments!.OutputDir.Should().BeNull();
+            buildOrDecompileArguments!.OutputFile.Should().BeNull();
         }
 
         [TestMethod]
         public void Decompile_with_outputdir_parameter_should_parse_correctly()
         {
             // Use relative . to ensure directory exists else the parser will throw.
-            var arguments = ArgumentParser.TryParse(new[] { "decompile", "--outdir", ".", "file1" });
-            var bulidOrDecompileArguments = (DecompileArguments?)arguments;
+            var arguments = ArgumentParser.TryParse(["decompile", "--outdir", ".", "file1"], IO, FileSystem);
+            var buildOrDecompileArguments = (DecompileArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
             Assert.IsNotNull(arguments);
-            bulidOrDecompileArguments!.InputFile.Should().Be("file1");
-            bulidOrDecompileArguments!.OutputToStdOut.Should().BeFalse();
-            bulidOrDecompileArguments!.OutputDir.Should().Be(".");
-            bulidOrDecompileArguments!.OutputFile.Should().BeNull();
+            buildOrDecompileArguments!.InputFile.Should().Be("file1");
+            buildOrDecompileArguments!.OutputToStdOut.Should().BeFalse();
+            buildOrDecompileArguments!.OutputDir.Should().Be(".");
+            buildOrDecompileArguments!.OutputFile.Should().BeNull();
         }
 
         [TestMethod]
         public void Decompile_with_outputfile_parameter_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "decompile", "--outfile", "jsonFile", "file1" });
-            var bulidOrDecompileArguments = (DecompileArguments?)arguments;
+            var arguments = ArgumentParser.TryParse(["decompile", "--outfile", "jsonFile", "file1"], IO, FileSystem);
+            var buildOrDecompileArguments = (DecompileArguments?)arguments;
 
             // using classic assert so R# understands the value is not null
             Assert.IsNotNull(arguments);
-            bulidOrDecompileArguments!.InputFile.Should().Be("file1");
-            bulidOrDecompileArguments!.OutputToStdOut.Should().BeFalse();
-            bulidOrDecompileArguments!.OutputDir.Should().BeNull();
-            bulidOrDecompileArguments!.OutputFile.Should().Be("jsonFile");
+            buildOrDecompileArguments!.InputFile.Should().Be("file1");
+            buildOrDecompileArguments!.OutputToStdOut.Should().BeFalse();
+            buildOrDecompileArguments!.OutputDir.Should().BeNull();
+            buildOrDecompileArguments!.OutputFile.Should().Be("jsonFile");
         }
 
         [TestMethod]
         public void Publish_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "publish", "file1", "--target", "target1" });
+            var arguments = ArgumentParser.TryParse(["publish", "file1", "--target", "target1"], IO, FileSystem);
             arguments.Should().BeOfType<PublishArguments>();
             var typed = (PublishArguments)arguments!;
 
@@ -293,7 +392,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void Publish_with_no_restore_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "publish", "file1", "--target", "target1", "--no-restore" });
+            var arguments = ArgumentParser.TryParse(["publish", "file1", "--target", "target1", "--no-restore"], IO, FileSystem);
             arguments.Should().BeOfType<PublishArguments>();
             var typed = (PublishArguments)arguments!;
 
@@ -305,7 +404,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void Restore__with_no_force_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "restore", "file1" });
+            var arguments = ArgumentParser.TryParse(["restore", "file1"], IO, FileSystem);
             arguments.Should().BeOfType<RestoreArguments>();
             var typed = (RestoreArguments)arguments!;
 
@@ -316,7 +415,7 @@ namespace Bicep.Cli.UnitTests
         [TestMethod]
         public void Restore_with_force_should_parse_correctly()
         {
-            var arguments = ArgumentParser.TryParse(new[] { "restore", "--force", "file1" });
+            var arguments = ArgumentParser.TryParse(["restore", "--force", "file1"], IO, FileSystem);
             arguments.Should().BeOfType<RestoreArguments>();
             var typed = (RestoreArguments)arguments!;
 

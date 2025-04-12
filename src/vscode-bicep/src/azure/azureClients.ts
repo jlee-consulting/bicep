@@ -10,20 +10,13 @@ import {
 
 // Lazy-load @azure packages to improve startup performance.
 
-export async function createResourceManagementClient(
-  context: AzExtClientContext
-): Promise<ResourceManagementClient> {
-  return createAzureClient(
-    context,
-    (await import("@azure/arm-resources")).ResourceManagementClient
-  );
+export async function createResourceManagementClient(context: AzExtClientContext): Promise<ResourceManagementClient> {
+  return createAzureClient(context, (await import("@azure/arm-resources")).ResourceManagementClient);
 }
 
-export async function createSubscriptionClient(
-  context: AzExtClientContext
-): Promise<SubscriptionClient> {
+export async function createSubscriptionClient(context: AzExtClientContext): Promise<SubscriptionClient> {
   return createAzureSubscriptionClient(
     context,
-    (await import("@azure/arm-resources-subscriptions")).SubscriptionClient
+    (await import("@azure/arm-resources-subscriptions")).SubscriptionClient,
   );
 }

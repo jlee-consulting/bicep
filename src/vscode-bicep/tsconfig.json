@@ -1,17 +1,18 @@
 {
   "compilerOptions": {
     "target": "es6",
-    "lib": ["dom", "dom.iterable", "es2016"],
+    "lib": ["dom", "dom.iterable", "es2020", "ES2021.String"],
     "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
     "outDir": "out",
     "sourceMap": true,
     "skipLibCheck": true,
+    "jsx": "react-jsx",
     "strict": true,
-    "noImplicitReturns": true,
     "noUnusedLocals": true,
-    "jsx": "react-jsx"
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]
 }

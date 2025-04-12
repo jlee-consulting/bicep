@@ -3,66 +3,90 @@
 using Bicep.Cli.Arguments;
 using Bicep.Cli.Logging;
 using Bicep.Cli.Services;
+using Bicep.Core;
+using Bicep.Core.Extensions;
 using Bicep.Core.FileSystem;
+using Bicep.Core.SourceGraph;
+using Bicep.Decompiler;
 using Microsoft.Extensions.Logging;
-using System;
-using System.Threading.Tasks;
 
 namespace Bicep.Cli.Commands
 {
     public class DecompileCommand : ICommand
     {
         private readonly ILogger logger;
-        private readonly IDiagnosticLogger diagnosticLogger;
-        private readonly InvocationContext invocationContext;
-        private readonly CompilationService compilationService;
-        private readonly DecompilationWriter writer;
+        private readonly DiagnosticLogger diagnosticLogger;
+        private readonly IOContext io;
+        private readonly IFileResolver fileResolver;
+        private readonly BicepDecompiler decompiler;
+        private readonly BicepCompiler compiler;
+        private readonly OutputWriter writer;
+        private readonly ISourceFileFactory sourceFileFactory;
 
         public DecompileCommand(
             ILogger logger,
-            IDiagnosticLogger diagnosticLogger,
-            InvocationContext invocationContext,
-            CompilationService compilationService,
-            DecompilationWriter writer)
+            DiagnosticLogger diagnosticLogger,
+            IOContext io,
+            IFileResolver fileResolver,
+            BicepDecompiler decompiler,
+            BicepCompiler compiler,
+            OutputWriter writer,
+            ISourceFileFactory sourceFileFactory)
         {
             this.logger = logger;
             this.diagnosticLogger = diagnosticLogger;
-            this.invocationContext = invocationContext;
-            this.compilationService = compilationService;
+            this.io = io;
+            this.fileResolver = fileResolver;
+            this.decompiler = decompiler;
+            this.compiler = compiler;
             this.writer = writer;
+            this.sourceFileFactory = sourceFileFactory;
         }
 
         public async Task<int> RunAsync(DecompileArguments args)
         {
-            logger.LogWarning(CliResources.DecompilerDisclaimerMessage);
+            logger.LogWarning(BicepDecompiler.DecompilerDisclaimerMessage);
 
-            var inputPath = PathHelper.ResolvePath(args.InputFile);
-
-            static string DefaultOutputPath(string path) => PathHelper.GetDefaultDecompileOutputPath(path);
-
-            var outputPath = PathHelper.ResolveDefaultOutputPath(inputPath, args.OutputDir, args.OutputFile, DefaultOutputPath);
+            var inputUri = PathHelper.FilePathToFileUrl(PathHelper.ResolvePath(args.InputFile));
+            var outputPath = PathHelper.ResolveDefaultOutputPath(inputUri.LocalPath, args.OutputDir, args.OutputFile, PathHelper.GetDefaultDecompileOutputPath);
+            var outputUri = PathHelper.FilePathToFileUrl(outputPath);
 
             try
             {
-                var decompilation = await compilationService.DecompileAsync(inputPath, outputPath);
+                if (!fileResolver.TryRead(inputUri).IsSuccess(out var jsonContents))
+                {
+                    throw new InvalidOperationException($"Failed to read {inputUri}");
+                }
+
+                var decompilation = await decompiler.Decompile(outputUri, jsonContents);
+
+                var workspace = new Workspace();
+                foreach (var (fileUri, bicepOutput) in decompilation.FilesToSave)
+                {
+                    workspace.UpsertSourceFile(this.sourceFileFactory.CreateBicepFile(fileUri, bicepOutput));
+                }
+
+                // to verify success we recompile and check for syntax errors.
+                var compilation = await compiler.CreateCompilation(decompilation.EntrypointUri, skipRestore: true, workspace: workspace);
+                var summary = diagnosticLogger.LogDiagnostics(DiagnosticOptions.Default, compilation);
 
                 if (args.OutputToStdOut)
                 {
-                    writer.ToStdout(decompilation);
+                    writer.DecompileResultToStdout(decompilation);
                 }
                 else
                 {
-                    writer.ToFile(decompilation);
+                    writer.DecompileResultToFile(decompilation);
                 }
+
+                // return non-zero exit code on errors
+                return summary.HasErrors ? 1 : 0;
             }
             catch (Exception exception)
             {
-                invocationContext.ErrorWriter.WriteLine(string.Format(CliResources.DecompilationFailedFormat, PathHelper.ResolvePath(args.InputFile), exception.Message));
+                await io.Error.WriteLineAsync(string.Format(CliResources.DecompilationFailedFormat, PathHelper.ResolvePath(args.InputFile), exception.Message));
                 return 1;
             }
-
-            // return non-zero exit code on errors
-            return diagnosticLogger.ErrorCount > 0 ? 1 : 0;
         }
     }
 }

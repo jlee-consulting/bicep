@@ -1,26 +1,26 @@
 {
   "version": "1.0.0",
   "private": true,
-  "dependencies": {},
   "devDependencies": {
-    "@types/cross-spawn": "^6.0.2",
-    "@types/jest": "^27.4.1",
-    "@typescript-eslint/eslint-plugin": "^4.33.0",
-    "@typescript-eslint/parser": "^4.33.0",
-    "cross-spawn": "^7.0.3",
-    "jest": "^28.0.2",
-    "prettier": "^2.6.2",
-    "typescript": "^4.6.4",
-    "eslint": "^7.32.0",
-    "eslint-config-prettier": "^8.5.0",
-    "eslint-plugin-header": "^3.1.1",
-    "eslint-plugin-jest": "^26.1.5",
-    "eslint-plugin-prettier": "^4.0.0"
+    "@eslint/js": "^9.24.0",
+    "@ianvs/prettier-plugin-sort-imports": "^4.4.1",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/eslint__js": "^8.42.3",
+    "@types/uuid": "^10.0.0",
+    "@vitest/eslint-plugin": "^1.1.39",
+    "cross-spawn": "^7.0.6",
+    "eslint": "^9.23.0",
+    "eslint-plugin-notice": "^1.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.29.0",
+    "vitest": "^2.1.8"
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "test": "jest",
-    "lint": "eslint src --ext ts",
-    "lint:fix": "eslint src --ext ts --fix"
+    "check-types": "tsc --noEmit",
+    "test": "npm run check-types && vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,ts,md}\""
   }
 }

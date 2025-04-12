@@ -11,14 +11,15 @@ namespace Bicep.Core.Emit
 {
     public class EmitterContext
     {
-        public EmitterContext(SemanticModel semanticModel, EmitterSettings settings)
+        public EmitterContext(SemanticModel semanticModel)
         {
-            Settings = settings;
+            Settings = semanticModel.EmitterSettings;
             SemanticModel = semanticModel;
             DataFlowAnalyzer = new(semanticModel);
             VariablesToInline = InlineDependencyVisitor.GetVariablesToInline(semanticModel);
             ResourceDependencies = ResourceDependencyVisitor.GetResourceDependencies(semanticModel);
-            FunctionVariables = FunctionVariableGeneratorVisitor.GetFunctionVariables(semanticModel).ToImmutableDictionary();
+            FunctionVariables = FunctionVariableGeneratorVisitor.GetFunctionVariables(semanticModel);
+            ExternalInputReferences = ExternalInputFunctionReferenceVisitor.CollectExternalInputReferences(semanticModel);
         }
 
         public EmitterSettings Settings { get; }
@@ -36,5 +37,7 @@ namespace Bicep.Core.Emit
         public ImmutableDictionary<ModuleSymbol, ScopeHelper.ScopeData> ModuleScopeData => SemanticModel.EmitLimitationInfo.ModuleScopeData;
 
         public ImmutableDictionary<DeclaredResourceMetadata, ScopeHelper.ScopeData> ResourceScopeData => SemanticModel.EmitLimitationInfo.ResourceScopeData;
+
+        public ExternalInputReferences ExternalInputReferences { get; }
     }
 }

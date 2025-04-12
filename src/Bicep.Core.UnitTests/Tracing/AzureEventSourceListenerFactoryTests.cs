@@ -1,11 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Collections.ObjectModel;
+using Bicep.Core.Features;
 using Bicep.Core.Tracing;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
 
 namespace Bicep.Core.UnitTests.Tracing
 {
@@ -49,7 +49,7 @@ namespace Bicep.Core.UnitTests.Tracing
         public void FullVerbosityShouldReturnNull()
         {
             AzureEventSourceListenerFactory.GetFormattedMessageWithoutHeaders(
-                Features.TraceVerbosity.Full,
+                TraceVerbosity.Full,
                 AzureCoreEventSource,
                 FormatString,
                 SampleNamesWithHeaders,
@@ -60,7 +60,7 @@ namespace Bicep.Core.UnitTests.Tracing
         public void NonAzureCoreShouldReturnNull()
         {
             AzureEventSourceListenerFactory.GetFormattedMessageWithoutHeaders(
-                Features.TraceVerbosity.Basic,
+                TraceVerbosity.Basic,
                 "not-azure-core",
                 FormatString,
                 SampleNamesWithHeaders,
@@ -71,7 +71,7 @@ namespace Bicep.Core.UnitTests.Tracing
         public void NonHeaderEventShouldReturnNull()
         {
             AzureEventSourceListenerFactory.GetFormattedMessageWithoutHeaders(
-                Features.TraceVerbosity.Basic,
+                TraceVerbosity.Basic,
                 AzureCoreEventSource,
                 FormatString,
                 SampleNamesWithoutHeaders,
@@ -82,7 +82,7 @@ namespace Bicep.Core.UnitTests.Tracing
         public void HeadersShouldBeRemoved()
         {
             AzureEventSourceListenerFactory.GetFormattedMessageWithoutHeaders(
-                Features.TraceVerbosity.Basic,
+                TraceVerbosity.Basic,
                 AzureCoreEventSource,
                 FormatString,
                 SampleNamesWithHeaders,

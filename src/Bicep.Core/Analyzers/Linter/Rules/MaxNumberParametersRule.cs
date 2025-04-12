@@ -3,22 +3,20 @@
 
 using Bicep.Core.Diagnostics;
 using Bicep.Core.Semantics;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace Bicep.Core.Analyzers.Linter.Rules
 {
     public sealed class MaxNumberParametersRule : LinterRuleBase
     {
         public new const string Code = "max-params";
+        // https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/best-practices#template-limits
         public const int MaxNumber = 256;
 
         public MaxNumberParametersRule() : base(
             code: Code,
             description: CoreResources.MaxNumberParametersRuleDescription,
-            docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"),
-            diagnosticLevel: DiagnosticLevel.Error)
+            LinterRuleCategory.DeploymentError,
+            docUri: new Uri($"https://aka.ms/bicep/linter/{Code}"))
         { }
 
         public override string FormatMessage(params object[] values)
@@ -26,14 +24,14 @@ namespace Bicep.Core.Analyzers.Linter.Rules
             return string.Format(CoreResources.MaxNumberParametersRuleMessageFormat, values);
         }
 
-        override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model)
+        override public IEnumerable<IDiagnostic> AnalyzeInternal(SemanticModel model, DiagnosticLevel diagnosticLevel)
         {
             if (model.Root.ParameterDeclarations.Count() > MaxNumber)
             {
                 var firstItem = model.Root.ParameterDeclarations.First();
-                return new IDiagnostic[] { CreateDiagnosticForSpan(firstItem.NameSyntax.Span, MaxNumber) };
+                return new IDiagnostic[] { CreateDiagnosticForSpan(diagnosticLevel, firstItem.NameSource.Span, MaxNumber) };
             }
-            return Enumerable.Empty<IDiagnostic>();
+            return [];
         }
     }
 }

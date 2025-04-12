@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Linq;
-using Azure.Deployments.Core.Extensions;
 using Bicep.Core.Analyzers.Linter.Rules;
 using Bicep.Core.CodeAction;
 using Bicep.Core.Diagnostics;
@@ -10,16 +8,23 @@ using Bicep.Core.UnitTests.Assertions;
 using Bicep.Core.UnitTests.Utils;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using static Bicep.Core.UnitTests.Utils.CompilationHelper;
 
 namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
 {
     [TestClass]
     public class NoHardcodedLocationRuleTests : LinterRuleTestsBase
     {
+        // This linter rule is "Off" by default
+        private static ServiceBuilder Services => new ServiceBuilder().WithConfiguration(BicepTestConstants.BuiltInConfigurationWithStableAnalyzers);
+
+        private static CompilationResult Compile(string fileContents)
+            => CompilationHelper.Compile(Services, ("main.bicep", fileContents));
+
         [TestMethod]
         public void If_ResLocationIs_Global_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 resource appInsightsComponents 'Microsoft.Insights/components@2020-02-02-preview' = {
                   name: 'name'
                   location: 'global'
@@ -36,7 +41,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_Global_CaseInsensitive_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 resource appInsightsComponents 'Microsoft.Insights/components@2020-02-02-preview' = {
                   name: 'name'
                   location: 'GLOBAL'
@@ -53,7 +58,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariableWithGlobal_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'Global'
                 resource appInsightsComponents 'Microsoft.Insights/components@2020-02-02-preview' = {
                   name: 'name'
@@ -71,7 +76,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_AnyOtherStringLiteral_ShouldFail_AndOfferToCreateNewParameter()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 resource appInsightsComponents 'Microsoft.Insights/components@2020-02-02-preview' = {
                   name: 'name'
                   location: 'non-global'
@@ -87,7 +92,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
             x.Should().BeEquivalentTo(
                 new
                 {
-                    Description = "Create new parameter 'location' with default value 'non-global'",
+                    Title = "Create new parameter 'location' with default value 'non-global'",
                     Replacements = new[] {
                         // Replacement 1: change 'non-global' to 'location'
                         new { Text = "location" },
@@ -100,7 +105,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_NameLocationAlreadyInUse_ShouldChooseAnotherNameForFix()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'fee fie'
                 param location2 string
                 resource location3 'Microsoft.Insights/components@2020-02-02-preview' = {
@@ -119,7 +124,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
             x.Should().BeEquivalentTo(
                 new
                 {
-                    Description = "Create new parameter 'location5' with default value 'non-global'",
+                    Title = "Create new parameter 'location5' with default value 'non-global'",
                     Replacements = new[] {
                         // Replacement 1: change 'non-global' to 'location5'
                         new { Text = "location5" },
@@ -132,7 +137,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_StringLiteral_ShouldFail_WithFixes()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 resource storageaccount 'Microsoft.Storage/storageAccounts@2021-02-01' = {
                   name: 'name'
                   location: 'westus'
@@ -152,7 +157,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariableDefinedAsLiteral_ShouldFail_WithFixToChangeToParam()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
 
                 resource storageaccount 'Microsoft.Storage/storageAccounts@2021-02-01' = {
@@ -180,7 +185,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariableDefinedAsLiteral_ShouldFail_WithFixToChangeToParam_OnlyOneErrorPerVariable()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = 'westus'
 
@@ -252,7 +257,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariableDefinedAsLiteral_Used2Times_ShouldFailJustOnVariableDef__WithFixToChangeToParam()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
 
                 resource storageaccount 'Microsoft.Storage/storageAccounts@2021-02-01' = {
@@ -281,9 +286,10 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         }
 
         [TestMethod]
-        public void If_ResLocationIs_VariableDefinedAsLiteral_UsedInResourcesAndModules_ShouldFailJustOnVariableDef__WithFixToChangeToParam()
+        public void If_ResLocationIs_VariableDefinedAsLiteral_UsedInResourcesAndModules_ShouldFailJustOnVariableDef_WithFixToChangeToParam()
         {
             var result = CompilationHelper.Compile(
+                Services,
                 ("main.bicep", @"
                     module m1 'module1.bicep' = [for i in range(0, 10): {
                       name: 'm1${i}'
@@ -334,7 +340,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_IndirectVariableDefinedAsLiteral_ShouldFail()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = location
 
@@ -357,7 +363,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_IndirectVariableDefinedAsLiteral_UsedIn2Places_ShouldFailJustOnVariableDef_WithFixToChangeToParam()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = location
 
@@ -389,7 +395,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_IndirectVariableDefinedAsLiteral_UsedIn2PlacesDifferently_ShouldFailJustOnVariableDefinition_WithFixToChangeToParam()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = location
 
@@ -421,7 +427,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariableDefinedAsLiteral_UsedMultipleTimes_ThenOneDisableNextLineShouldFixIt()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 #disable-next-line no-hardcoded-location
                 var location = 'westus'
 
@@ -459,7 +465,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_TwiceIndirectedVariableDefinedAsLiteral_ShouldFail_WithFixToChangeToParam()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = location
                 var location3 = location2
@@ -483,7 +489,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariablePointingToParameter_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 param location string = 'global'
                 var location2 = location
                 var location3 = location2
@@ -504,7 +510,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_VariableWithExpression_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = true ? 'a' : 'b'
 
                 resource storageaccount 'Microsoft.Storage/storageAccounts@2021-02-01' = {
@@ -523,7 +529,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_IndirectedVariableWithInterpolation_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = '${location}2'
                 var location3 = location2
@@ -544,7 +550,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_IndirectedVariableWithExpression_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var location = 'westus'
                 var location2 = true ? location : location
                 var location3 = location2
@@ -565,7 +571,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void If_ResLocationIs_Expression_ShouldPass()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 param location1 string
                 param location2 string
 
@@ -585,7 +591,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         [TestMethod]
         public void ResLoc_If_Resource_HasLocation_AsIndirectStringLiteral_ShouldFail()
         {
-            var result = CompilationHelper.Compile(@"
+            var result = Compile(@"
                 var v1 = 'non-global'
 
                 resource appInsightsComponents 'Microsoft.Insights/components@2020-02-02-preview' = {
@@ -609,6 +615,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         public void ForLoop2_Module()
         {
             var result = CompilationHelper.Compile(
+                Services,
                 ("main.bicep", @"
                   module m2 'module1.bicep' = [for i in range(0, 10): {
                     name: 'name${i}'
@@ -633,6 +640,7 @@ namespace Bicep.Core.UnitTests.Diagnostics.LinterRuleTests
         public void ResLoc_If_Module_HasLocationProperty_WithDefault_AndStringLiteralPassedIn_ShouldFail()
         {
             var result = CompilationHelper.Compile(
+                Services,
                 ("main.bicep", @"
                     module m1 'module1.bicep' = {
                       name: 'name'

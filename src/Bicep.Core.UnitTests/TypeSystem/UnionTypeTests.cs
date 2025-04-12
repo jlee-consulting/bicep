@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-using System.Linq;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -75,9 +75,9 @@ namespace Bicep.Core.UnitTests.TypeSystem
         public void UnionTypeShouldDisplayStringLiteralsCorrectly()
         {
             var unionType = TypeHelper.CreateTypeUnion(
-                new StringLiteralType("Error"),
-                new StringLiteralType("Warning"),
-                new StringLiteralType("Info")
+                TypeFactory.CreateStringLiteralType("Error"),
+                TypeFactory.CreateStringLiteralType("Warning"),
+                TypeFactory.CreateStringLiteralType("Info")
             );
 
             unionType.Name.Should().Be("'Error' | 'Info' | 'Warning'");
@@ -87,7 +87,7 @@ namespace Bicep.Core.UnitTests.TypeSystem
         public void UnionTypeInvolvingResourceScopeTypesShouldProduceExpectedDisplayString()
         {
             var unionType = TypeHelper.CreateTypeUnion(
-                new StringLiteralType("Test"),
+                TypeFactory.CreateStringLiteralType("Test"),
                 LanguageConstants.CreateResourceScopeReference(ResourceScope.Resource),
                 LanguageConstants.CreateResourceScopeReference(ResourceScope.Subscription | ResourceScope.Tenant)
             );
@@ -105,11 +105,13 @@ namespace Bicep.Core.UnitTests.TypeSystem
         }
 
         [TestMethod]
-        public void UnionsOfStringsAndStringLiteralTypesShouldProduceStringType()
+        public void UnionsOfStringsAndStringLiteralTypesShouldNotDropLiterals()
         {
-            TypeHelper.CreateTypeUnion(LanguageConstants.String, new StringLiteralType("hello"), new StringLiteralType("there")).Should().BeSameAs(LanguageConstants.String);
+            TypeHelper.CreateTypeUnion(LanguageConstants.String, TypeFactory.CreateStringLiteralType("hello"), TypeFactory.CreateStringLiteralType("there")).Name.Should().Be("'hello' | 'there' | string");
 
-            TypeHelper.CreateTypeUnion(LanguageConstants.String, new StringLiteralType("hello"), LanguageConstants.Bool, new StringLiteralType("there")).Name.Should().Be("bool | string");
+            TypeHelper.CreateTypeUnion(LanguageConstants.String, TypeFactory.CreateStringLiteralType("hello"), TypeFactory.CreateStringLiteralType("there"), LanguageConstants.String).Name.Should().Be("'hello' | 'there' | string");
+
+            TypeHelper.CreateTypeUnion(LanguageConstants.String, TypeFactory.CreateStringLiteralType("hello"), LanguageConstants.Bool, TypeFactory.CreateStringLiteralType("there")).Name.Should().Be("'hello' | 'there' | bool | string");
         }
 
         [TestMethod]
@@ -121,7 +123,7 @@ namespace Bicep.Core.UnitTests.TypeSystem
                 LanguageConstants.Array,
                 new TypedArrayType(LanguageConstants.Int, TypeSymbolValidationFlags.Default),
                 LanguageConstants.String,
-                new ObjectType("myObj", TypeSymbolValidationFlags.Default, Enumerable.Empty<TypeProperty>(), null));
+                new ObjectType("myObj", TypeSymbolValidationFlags.Default, [], null));
             actual.Name.Should().Be("array | myObj | string");
         }
 
@@ -132,4 +134,3 @@ namespace Bicep.Core.UnitTests.TypeSystem
         }
     }
 }
-

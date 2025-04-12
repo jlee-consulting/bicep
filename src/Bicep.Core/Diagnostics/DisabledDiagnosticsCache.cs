@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
 using System.Collections.Immutable;
-using System.Linq;
 using Bicep.Core.Extensions;
 using Bicep.Core.Syntax;
 using Bicep.Core.Text;
@@ -37,10 +35,11 @@ namespace Bicep.Core.Diagnostics
             return visitor.GetDisableNextLineDiagnosticDirectivesCache();
         }
 
-        private class SyntaxTriviaVisitor : SyntaxVisitor
+        private class SyntaxTriviaVisitor : CstVisitor
         {
-            private ImmutableArray<int> lineStarts;
-            private ImmutableDictionary<int, DisableNextLineDirectiveEndPositionAndCodes>.Builder disableNextLineDiagnosticDirectivesCacheBuilder = ImmutableDictionary.CreateBuilder<int, DisableNextLineDirectiveEndPositionAndCodes>();
+            private readonly ImmutableArray<int> lineStarts;
+
+            private readonly ImmutableDictionary<int, DisableNextLineDirectiveEndPositionAndCodes>.Builder disableNextLineDiagnosticDirectivesCacheBuilder = ImmutableDictionary.CreateBuilder<int, DisableNextLineDirectiveEndPositionAndCodes>();
 
             public SyntaxTriviaVisitor(ImmutableArray<int> lineStarts)
             {

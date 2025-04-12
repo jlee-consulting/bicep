@@ -1,52 +1,48 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Azure.Deployments.Core.Entities;
-using Azure.Deployments.Core.Helpers;
-using Azure.Deployments.Core.Json;
+using System.Text;
 using Bicep.Core.Configuration;
-using Bicep.Core.Emit;
+using Bicep.Core.Extensions;
 using Bicep.Core.Features;
 using Bicep.Core.FileSystem;
 using Bicep.Core.Registry;
-using Bicep.Core.Semantics.Namespaces;
-using Bicep.Core.Workspaces;
+using Bicep.Core.SourceGraph;
+using Bicep.Core.Syntax;
 using Bicep.LanguageServer.CompilationManager;
-using Newtonsoft.Json.Linq;
 using OmniSharp.Extensions.JsonRpc;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Workspace;
-using System.Collections.Immutable;
-using System.Text;
 
 namespace Bicep.LanguageServer.Handlers
 {
     // This handler is used to force the modules restore for given a bicep file.
-    // It returns Restore (force) succeeded/failed message, which can be displayed approriately in IDE output window
+    // It returns Restore (force) succeeded/failed message, which can be displayed appropriately in IDE output window
     public class BicepForceModulesRestoreCommandHandler : ExecuteTypedResponseCommandHandlerBase<string, string>
     {
-        private readonly ICompilationManager compilationManager;
-        private readonly EmitterSettings emitterSettings;
-        private readonly IFeatureProvider features;
         private readonly IFileResolver fileResolver;
         private readonly IModuleDispatcher moduleDispatcher;
-        private readonly INamespaceProvider namespaceProvider;
+        private readonly ICompilationManager compilationManager;
         private readonly IConfigurationManager configurationManager;
+        private readonly IWorkspace workspace;
+        private readonly ISourceFileFactory sourceFileFactory;
 
-        public BicepForceModulesRestoreCommandHandler(ICompilationManager compilationManager, ISerializer serializer, IFeatureProvider features, EmitterSettings emitterSettings, INamespaceProvider namespaceProvider, IFileResolver fileResolver, IModuleDispatcher moduleDispatcher, IConfigurationManager configurationManager)
+        public BicepForceModulesRestoreCommandHandler(
+            ISerializer serializer,
+            IFileResolver fileResolver,
+            IModuleDispatcher moduleDispatcher,
+            IConfigurationManager configurationManager,
+            ICompilationManager compilationManager,
+            IWorkspace workspace,
+            ISourceFileFactory sourceFileFactory)
             : base(LangServerConstants.ForceModulesRestoreCommand, serializer)
         {
-            this.compilationManager = compilationManager;
-            this.emitterSettings = emitterSettings;
-            this.features = features;
-            this.namespaceProvider = namespaceProvider;
             this.fileResolver = fileResolver;
             this.moduleDispatcher = moduleDispatcher;
             this.configurationManager = configurationManager;
+            this.compilationManager = compilationManager;
+            this.workspace = workspace;
+            this.sourceFileFactory = sourceFileFactory;
         }
 
         public override Task<string> Handle(string bicepFilePath, CancellationToken cancellationToken)
@@ -57,53 +53,49 @@ namespace Bicep.LanguageServer.Handlers
             }
 
             DocumentUri documentUri = DocumentUri.FromFileSystemPath(bicepFilePath);
-            Task<string> restoreOutput = GenerateForceModulesRestoreOutputMessage(bicepFilePath, documentUri);
+            Task<string> restoreOutput = ForceModulesRestoreAndGenerateOutputMessage(documentUri);
 
             return restoreOutput;
         }
 
-        private async Task<string> GenerateForceModulesRestoreOutputMessage(string bicepFilePath, DocumentUri documentUri)
+        private async Task<string> ForceModulesRestoreAndGenerateOutputMessage(DocumentUri documentUri)
         {
-            var fileUri = documentUri.ToUri();
-            RootConfiguration? configuration = null;
+            var fileUri = documentUri.ToUriEncoded();
 
-            try
-            {
-                configuration = this.configurationManager.GetConfiguration(fileUri);
-            }
-            catch (ConfigurationException exception)
-            {
-                // Fail the restore if there's configuration errors.
-                return exception.Message;
-            }
-            Workspace workspace = new Workspace();
-            SourceFileGrouping sourceFileGrouping = SourceFileGroupingBuilder.Build(this.fileResolver, this.moduleDispatcher, workspace, fileUri, configuration);
+            var sourceFileGrouping = SourceFileGroupingBuilder.Build(
+                this.fileResolver,
+                this.moduleDispatcher,
+                this.workspace,
+                this.sourceFileFactory,
+                fileUri);
 
             // Ignore modules to restore logic, include all modules to be restored
-            var modulesToRestore = sourceFileGrouping.SourceFilesByModuleDeclaration
-                .Select(kvp => kvp.Key)
-                .Union(sourceFileGrouping.ModulesToRestore)
-                .ToImmutableHashSet();
+            var artifactsToRestore = sourceFileGrouping.GetArtifactsToRestore(force: true);
 
-            // RestoreModules() does a distinct but we'll do it also to prevent deuplicates in outputs and logging
-            var modulesToRestoreReferences = this.moduleDispatcher.GetValidModuleReferences(modulesToRestore, configuration)
-                .Distinct()
-                .OrderBy(key => key.FullyQualifiedReference);
+            // RestoreModules() does a distinct but we'll do it also to prevent duplicates in outputs and logging
+            var artifactReferencesToRestore = ArtifactHelper.GetValidArtifactReferences(artifactsToRestore)
+                .OrderBy(key => key.FullyQualifiedReference)
+                .ToArray();
 
-            if (!modulesToRestoreReferences.Any()) {
+            if (artifactReferencesToRestore.Length == 0)
+            {
                 return $"Restore (force) skipped. No modules references in input file.";
             }
 
             // restore is supposed to only restore the module references that are syntactically valid
-            await this.moduleDispatcher.RestoreModules(configuration, modulesToRestoreReferences, forceModulesRestore: true);
+            await this.moduleDispatcher.RestoreArtifacts(artifactReferencesToRestore, forceRestore: true);
 
             // if all are marked as success
             var sbRestoreSummary = new StringBuilder();
-            foreach(var module in modulesToRestoreReferences) {
-                var restoreStatus = this.moduleDispatcher.GetModuleRestoreStatus(module, configuration, out _);
+            foreach (var module in artifactReferencesToRestore)
+            {
+                var restoreStatus = this.moduleDispatcher.GetArtifactRestoreStatus(module, out _);
                 sbRestoreSummary.Append($"{Environment.NewLine}  * {module.FullyQualifiedReference}: {restoreStatus}");
             }
 
+            // refresh all compilations with a reference to this file or cached artifacts
+            var artifactUris = artifactsToRestore.Select(x => x.Result.TryUnwrap()).WhereNotNull();
+            compilationManager.RefreshChangedFiles(artifactUris.Concat(documentUri.ToUriEncoded()));
             return $"Restore (force) summary: {sbRestoreSummary}";
         }
     }

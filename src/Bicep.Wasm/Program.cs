@@ -1,24 +1,31 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Threading.Tasks;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
+using Bicep.Core.Registry;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 
-namespace Bicep.Wasm
+namespace Bicep.Wasm;
+
+public class Program
 {
-    public class Program
+    public static async Task Main(string[] args)
     {
-        public static async Task Main(string[] args)
-        {
-            var builder = WebAssemblyHostBuilder.CreateDefault(args);
+        var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
-            var jsRuntime = builder.Services.BuildServiceProvider().GetService<IJSRuntime>() ?? throw new InvalidOperationException("Unable to obtain JS runtime.");
-            await jsRuntime.InvokeAsync<object>("BicepInitialize", DotNetObjectReference.Create(new Interop(jsRuntime)));
+        builder.Services.AddSingleton<IFileSystem, MockFileSystem>();
+        builder.Services.AddSingleton<IArtifactRegistryProvider, EmptyModuleRegistryProvider>();
+        builder.Services.AddBicepCore();
+        builder.Services.AddBicepDecompiler();
 
-            await builder.Build().RunAsync();
-        }
+        var serviceProvider = builder.Services.BuildServiceProvider();
+
+        var jsRuntime = serviceProvider.GetRequiredService<IJSRuntime>();
+        var interop = new Interop(jsRuntime, serviceProvider);
+        await jsRuntime.InvokeAsync<object>("InteropInitialize", DotNetObjectReference.Create(interop));
+
+        await builder.Build().RunAsync();
     }
 }

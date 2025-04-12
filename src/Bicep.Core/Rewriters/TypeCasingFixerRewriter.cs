@@ -1,15 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
 using Bicep.Core.Extensions;
-using Bicep.Core.Parsing;
 using Bicep.Core.Semantics;
 using Bicep.Core.Syntax;
 using Bicep.Core.TypeSystem;
+using Bicep.Core.TypeSystem.Types;
 
 namespace Bicep.Core.Rewriters
 {
@@ -45,7 +42,7 @@ namespace Bicep.Core.Rewriters
                         SyntaxBase newKeySyntax;
                         if (Regex.IsMatch(insensitivePropertyKey, "^[a-zA-Z][a-zA-Z0-9_]*$"))
                         {
-                            newKeySyntax = new IdentifierSyntax(new Token(TokenType.Identifier, new TextSpan(0, 0), insensitivePropertyKey, Enumerable.Empty<SyntaxTrivia>(), Enumerable.Empty<SyntaxTrivia>()));
+                            newKeySyntax = SyntaxFactory.CreateIdentifier(insensitivePropertyKey);
                         }
                         else
                         {
@@ -94,10 +91,12 @@ namespace Bicep.Core.Rewriters
                 return base.ReplacePropertyAccessSyntax(syntax);
             }
 
-            var propertySyntax = new IdentifierSyntax(new Token(TokenType.Identifier, new TextSpan(0, 0), insensitivePropertyName, Enumerable.Empty<SyntaxTrivia>(), Enumerable.Empty<SyntaxTrivia>()));
+            var propertySyntax = SyntaxFactory.CreateIdentifier(insensitivePropertyName);
+
             return new PropertyAccessSyntax(
                 syntax.BaseExpression,
                 syntax.Dot,
+                syntax.SafeAccessMarker,
                 propertySyntax);
         }
 
